@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { to: "/mapa",           label: "Mapa",           icon: "🗺️", moduleKey: "mapa" },
   { to: "/admin",          label: "Administración", icon: "⚙️", moduleKey: "administracion" },
   { to: "/auditoria",      label: "Auditoría",      icon: "🔍", moduleKey: "auditoria" },
+  { to: "/logs",           label: "Logs",           icon: "🖥️", moduleKey: "logs" },
   { to: "/notificaciones", label: "Notificaciones", icon: "🔔", moduleKey: "notificaciones" },
 ];
 
@@ -53,7 +54,7 @@ function esMismoDiaDelAnio(fecha1, fecha2) {
 
 // ─── Componente Right Sidebar ─────────────────────────────────────────────────
 
-function RightSidebar({ usuarios }) {
+function RightSidebar({ usuarios, puedeEditar }) {
   const [abierto, setAbierto] = useState(true);
   const [links, setLinks] = useState(loadLinks);
   const [showFormLink, setShowFormLink] = useState(false);
@@ -164,7 +165,7 @@ function RightSidebar({ usuarios }) {
           textTransform: "uppercase",
           letterSpacing: "0.05em",
         }}>
-          Panel Super Admin
+          Panel de Empresa
         </div>
 
         {/* ── Cumpleaños / Aniversarios ────────────── */}
@@ -207,15 +208,17 @@ function RightSidebar({ usuarios }) {
         <div style={{ padding: "14px 16px", flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: "0.9rem", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>🔗 Links Frecuentes</span>
-            <button
-              onClick={() => setShowFormLink((v) => !v)}
-              style={{
-                background: "var(--accent)", color: "white", border: "none",
-                borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: "0.78rem",
-              }}
-            >
-              {showFormLink ? "✕" : "+ Añadir"}
-            </button>
+            {puedeEditar && (
+              <button
+                onClick={() => setShowFormLink((v) => !v)}
+                style={{
+                  background: "var(--accent)", color: "white", border: "none",
+                  borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: "0.78rem",
+                }}
+              >
+                {showFormLink ? "✕" : "+ Añadir"}
+              </button>
+            )}
           </div>
 
           {showFormLink && (
@@ -286,13 +289,15 @@ function RightSidebar({ usuarios }) {
                     >
                       🔗 {link.titulo}
                     </a>
-                    <button
-                      onClick={() => handleDeleteLink(link.id)}
-                      title="Eliminar"
-                      style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: "0.85rem", flexShrink: 0 }}
-                    >
-                      ✕
-                    </button>
+                    {puedeEditar && (
+                      <button
+                        onClick={() => handleDeleteLink(link.id)}
+                        title="Eliminar"
+                        style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: "0.85rem", flexShrink: 0 }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -316,6 +321,9 @@ const Layout = () => {
   const showLabels = !collapsed || mobileOpen;
   const modulosPermitidos = new Set(getModulesForUser(usuario));
   const esSuperAdmin = usuario?.rol === "super_admin";
+  const puedeEditarSidebar = esSuperAdmin || usuario?.rol === "agente_soporte_ti";
+  // Roles que pueden consultar la lista de usuarios (para mostrar aniversarios)
+  const ROLES_PUEDEN_VER_USUARIOS = ["super_admin", "agente_soporte_ti", "supervisor_sucursales"];
 
   const handleLogout = () => { logout(); navigate("/login"); };
   const itemsVisibles = NAV_ITEMS.filter((item) => !item.moduleKey || modulosPermitidos.has(item.moduleKey));
@@ -326,12 +334,12 @@ const Layout = () => {
     return () => window.removeEventListener("resize", handler);
   }, []);
 
-  // Load users for the right sidebar (only for super_admin)
+  // Cargar usuarios para el panel lateral (solo roles con permiso de lectura)
   useEffect(() => {
-    if (esSuperAdmin) {
+    if (usuario && ROLES_PUEDEN_VER_USUARIOS.includes(usuario.rol)) {
       getUsuarios().then((u) => setTodosUsuarios(Array.isArray(u) ? u : [])).catch(() => {});
     }
-  }, [esSuperAdmin]);
+  }, [usuario?.rol]);
 
   const fotoUrl = usuario?.fotoUrl ? `${BASE}${usuario.fotoUrl}` : null;
   const logoEmpresa = empresa?.logoUrl ? `${BASE}${empresa.logoUrl}` : null;
@@ -340,7 +348,7 @@ const Layout = () => {
   return (
     <div
       className={`layout ${collapsed ? "sidebar-is-collapsed" : ""}`}
-      style={esSuperAdmin ? { paddingRight: 260 } : {}}
+      style={{ paddingRight: 260 }}
     >
       <header className="mobile-header">
         <button className="hamburger-btn" onClick={() => setMobileOpen(!mobileOpen)}>
@@ -410,8 +418,8 @@ const Layout = () => {
         <Outlet />
       </main>
 
-      {/* Right sidebar - solo super_admin */}
-      {esSuperAdmin && <RightSidebar usuarios={todosUsuarios} />}
+      {/* Right sidebar - visible para todos, editable solo por super_admin y agente_soporte_ti */}
+      <RightSidebar usuarios={todosUsuarios} puedeEditar={puedeEditarSidebar} />
     </div>
   );
 };

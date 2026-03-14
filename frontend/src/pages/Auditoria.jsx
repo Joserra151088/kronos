@@ -8,8 +8,17 @@ import { getAuditoria, getUsuarios } from "../utils/api";
 const HOY = new Date().toISOString().split("T")[0];
 const HACE_7 = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
 
-const METODOS = ["", "GET", "POST", "PUT", "DELETE"];
 const ROWS_PER_PAGE = 50;
+
+const ROL_LABEL = {
+  super_admin:               "Super Admin",
+  agente_soporte_ti:         "Soporte TI",
+  supervisor_sucursales:     "Supervisor",
+  agente_control_asistencia: "Control Asist.",
+  visor_reportes:            "Visor Reportes",
+  medico_titular:            "Médico Titular",
+  medico_de_guardia:         "Médico Guardia",
+};
 
 const Auditoria = () => {
   const [entradas,  setEntradas]  = useState([]);
@@ -18,7 +27,7 @@ const Auditoria = () => {
   const [page,      setPage]      = useState(1);
   const [cargando,  setCargando]  = useState(false);
   const [filtros,   setFiltros]   = useState({
-    usuarioId: "", accion: "", desde: HACE_7, hasta: HOY, metodo: "",
+    usuarioId: "", accion: "", desde: HACE_7, hasta: HOY,
   });
 
   const buscar = useCallback(async (pg = 1) => {
@@ -80,13 +89,6 @@ const Auditoria = () => {
             <input type="date" className="form-control" value={filtros.hasta}
               onChange={e => setFiltros({...filtros, hasta: e.target.value})} />
           </div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ fontSize: 12 }}>Método</label>
-            <select className="form-control filter-select" value={filtros.metodo}
-              onChange={e => setFiltros({...filtros, metodo: e.target.value})}>
-              {METODOS.map(m => <option key={m} value={m}>{m || "Todos"}</option>)}
-            </select>
-          </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => buscar(1)} disabled={cargando}>
               🔍 Buscar
@@ -112,9 +114,6 @@ const Auditoria = () => {
                 <th>Usuario</th>
                 <th>Rol</th>
                 <th>Acción</th>
-                <th>Método</th>
-                <th>Ruta</th>
-                <th>Estado</th>
                 <th>IP</th>
               </tr>
             </thead>
@@ -125,24 +124,10 @@ const Auditoria = () => {
                     {new Date(e.timestamp).toLocaleString("es-MX")}
                   </td>
                   <td>{e.usuarioNombre || "—"}</td>
-                  <td style={{ fontSize: 12, color: "var(--text2)" }}>{e.usuarioRol}</td>
+                  <td style={{ fontSize: 12, color: "var(--text2)" }}>
+                    {ROL_LABEL[e.usuarioRol] || e.usuarioRol || "—"}
+                  </td>
                   <td>{e.accion}</td>
-                  <td>
-                    <span className={`badge ${
-                      e.metodo === "GET"    ? "badge-default"  :
-                      e.metodo === "POST"   ? "badge-success"  :
-                      e.metodo === "PUT"    ? "badge-warning"  :
-                      e.metodo === "DELETE" ? "badge-danger"   : "badge-default"
-                    }`} style={{ fontSize: 11 }}>{e.metodo}</span>
-                  </td>
-                  <td style={{ fontSize: 11, color: "var(--text2)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {e.ruta}
-                  </td>
-                  <td>
-                    <span className={`badge ${e.exito ? "badge-success" : "badge-danger"}`} style={{ fontSize: 11 }}>
-                      {e.statusCode}
-                    </span>
-                  </td>
                   <td style={{ fontSize: 11, color: "var(--text2)", fontFamily: "monospace" }}>{e.ip}</td>
                 </tr>
               ))}

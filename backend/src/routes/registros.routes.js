@@ -102,12 +102,15 @@ router.get("/", (req, res) => {
 });
 
 router.get("/hoy", (req, res) => {
+  const hoyFecha = new Date().toISOString().split("T")[0];
   const hoy = store.getRegistrosHoyDeUsuario(req.user.id);
   const siguiente = store.getSiguienteRegistro(req.user.id);
   const ultimo = store.getLastRegistroDeUsuario(req.user.id);
 
+  // El cooldown solo aplica si el último registro fue HOY.
+  // Si el último registro fue ayer o antes, no bloquea el nuevo día.
   let cooldownRestanteMs = 0;
-  if (ultimo) {
+  if (ultimo && ultimo.fecha === hoyFecha) {
     const diffMs = Date.now() - new Date(ultimo.creadoEn).getTime();
     cooldownRestanteMs = Math.max(0, ONE_HOUR_MS - diffMs);
   }
@@ -182,10 +185,11 @@ router.post("/", (req, res) => {
 
   const esMedicoGuardia = req.user.rol === ROLES.MEDICO_DE_GUARDIA;
 
-  // Para médico de guardia: cooldown se aplica sólo dentro de la misma sucursal destino
-  // Para otros roles: cooldown global (último registro de cualquier sucursal)
+  // El cooldown solo aplica si el último registro fue HOY.
+  // Al cambiar de día, los registros se reinician y no hay cooldown.
+  const hoyFecha = new Date().toISOString().split("T")[0];
   const ultimo = store.getLastRegistroDeUsuario(req.user.id);
-  if (ultimo) {
+  if (ultimo && ultimo.fecha === hoyFecha) {
     const diffMs = Date.now() - new Date(ultimo.creadoEn).getTime();
     if (diffMs < ONE_HOUR_MS) {
       const minutosRestantes = Math.ceil((ONE_HOUR_MS - diffMs) / 60000);

@@ -90,7 +90,7 @@ const Login = () => {
         <div className="login-welcome-check">✔</div>
         <div className="login-welcome-text">¡Bienvenido, {bienvenido.nombre}!</div>
         <div className="login-welcome-sub">
-          {empresa?.nombre || "Control de Acceso"} — Cargando tu espacio…
+          {empresa?.nombre || "Kronos"} — Cargando tu espacio…
         </div>
       </div>
     );
@@ -110,8 +110,8 @@ const Login = () => {
               : <span style={{ fontSize: "4rem" }}>🏢</span>
             }
           </div>
-          <h1>{empresa?.nombre || "Control de Acceso"}</h1>
-          <p>Sistema de registro de asistencia por sucursal</p>
+          <h1>{empresa?.nombre || "Kronos"}</h1>
+          <p>Sistema de control de acceso y asistencia</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
@@ -195,12 +195,12 @@ const Login = () => {
           <div style={{ borderTop: "1px solid var(--border)", padding: "16px 0 0" }}>
             {resetEnviado ? (
               <div className="alert alert-success" style={{ margin: 0 }}>
-                ✅ Se ha enviado una notificación a los administradores del sistema. Pronto te contactarán para restablecer tu contraseña.
+                ✅ Si el correo está registrado, recibirás un enlace para restablecer tu contraseña. Revisa tu bandeja de entrada (y la carpeta de spam).
               </div>
             ) : (
               <form onSubmit={handleForgotPassword}>
                 <p style={{ fontSize: "0.875rem", color: "var(--text2)", marginBottom: 12 }}>
-                  Ingresa tu correo electrónico y notificaremos a tu supervisor para restablecer tu contraseña.
+                  Ingresa tu correo electrónico y te enviaremos un enlace para crear una nueva contraseña.
                 </p>
                 {errorReset && <div className="alert alert-danger" style={{ marginBottom: 10 }}>{errorReset}</div>}
                 <div className="form-group">

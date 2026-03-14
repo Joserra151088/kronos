@@ -3,6 +3,7 @@ import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import Eventos from "./pages/Eventos";
 import Sucursales from "./pages/Sucursales";
@@ -16,12 +17,17 @@ import Grupos from "./pages/Grupos";
 import Mapa from "./pages/Mapa";
 import Perfil from "./pages/Perfil";
 import Auditoria from "./pages/Auditoria";
+import Logs from "./pages/Logs";
 
 const App = () => (
   <AuthProvider>
     <BrowserRouter>
       <Routes>
+        {/* Rutas públicas */}
         <Route path="/login" element={<Login />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+
+        {/* Rutas protegidas */}
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={
@@ -60,6 +66,9 @@ const App = () => (
           <Route path="perfil" element={<Perfil />} />
           <Route path="auditoria" element={
             <ProtectedRoute moduleKey="auditoria"><Auditoria /></ProtectedRoute>
+          } />
+          <Route path="logs" element={
+            <ProtectedRoute moduleKey="logs"><Logs /></ProtectedRoute>
           } />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

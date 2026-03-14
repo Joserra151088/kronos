@@ -11,9 +11,10 @@ const { saveFile } = require("../services/storage.service");
 const { getAllowedSucursalIds, canAccessUsuario } = require("../utils/access-scope");
 const notifService = require("../services/notificaciones.service");
 
+// Solo el supervisor y el administrador reciben notificación de cambio de contraseña.
+// El empleado realiza el cambio por sí mismo; estas cuentas solo lo visualizan.
 const ROLES_RECIBEN_CAMBIO_PASSWORD = [
   "supervisor_sucursales",
-  "agente_control_asistencia",
   "agente_soporte_ti",
   "super_admin",
 ];

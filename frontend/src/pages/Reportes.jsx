@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useEmpresa } from "../context/EmpresaContext";
 import { getSucursales, getUsuarios, getReporteAsistencia, getReporteIncidencias, getTiposIncidencia, getReporteMinutos, getMinutosEmpleados, getRegistros } from "../utils/api";
 import { exportToExcel, exportToCsv, exportToPdf } from "../utils/export";
 import { formatearMinutos } from "../utils/minutos";
@@ -731,6 +732,7 @@ function TimelineChart({ sucursales, usuarios }) {
 
 const Reportes = () => {
   const { usuario } = useAuth();
+  const { empresa } = useEmpresa();
   const [tab, setTab] = useState("asistencia");
   const [sucursales, setSucursales] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -795,7 +797,17 @@ const Reportes = () => {
     if (datos.length === 0) { alert("No hay datos para exportar"); return; }
     if (tipo === "excel") await exportToExcel(cols, datos, nombreArchivo);
     else if (tipo === "csv") exportToCsv(cols, datos, nombreArchivo);
-    else await exportToPdf(cols, datos, nombreArchivo, `Reporte de ${tab}`);
+    else {
+      const tituloTab = tab === "asistencia" ? "Reporte de Asistencia"
+        : tab === "incidencias" ? "Reporte de Incidencias"
+        : "Reporte de Tiempo Trabajado";
+      await exportToPdf(cols, datos, nombreArchivo, tituloTab, {
+        desde:   filtros.fechaInicio,
+        hasta:   filtros.fechaFin,
+        empresa: empresa?.nombre || "Kronos",
+        usuario: usuario ? `${usuario.nombre} ${usuario.apellido}` : undefined,
+      });
+    }
   };
 
   const setFiltro = (key, val) => setFiltros(prev => ({ ...prev, [key]: val }));

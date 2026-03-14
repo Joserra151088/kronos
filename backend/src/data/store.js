@@ -369,13 +369,14 @@ const MODULOS_SISTEMA = [
   { key: "mapa",           label: "Mapa" },
   { key: "administracion", label: "Administración" },
   { key: "auditoria",      label: "Auditoría" },
+  { key: "logs",           label: "Logs / Salud de Plataforma" },
   { key: "notificaciones", label: "Notificaciones" },
 ];
 
 // Mapa rol → módulos permitidos (configurable desde el panel de Admin)
 let configuracionRoles = {
-  super_admin:                 ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","auditoria","notificaciones"],
-  agente_soporte_ti:           ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","notificaciones"],
+  super_admin:                 ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","auditoria","logs","notificaciones"],
+  agente_soporte_ti:           ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","logs","notificaciones"],
   supervisor_sucursales:       ["dashboard","eventos","incidencias","reportes","empleados","grupos","mapa","notificaciones"],
   agente_control_asistencia:   ["dashboard","eventos","incidencias","notificaciones"],
   visor_reportes:              ["dashboard","reportes","mapa","notificaciones"],
@@ -1109,6 +1110,33 @@ const loadDatabaseSnapshot = async () => {
       rolesBase[row.rol].push(row.modulo);
     });
     configuracionRoles = { ...configuracionRoles, ...rolesBase };
+
+    // ── Auto-migración: asegurar que los módulos nuevos (logs, etc.) ──────────
+    // existan en la BD cuando fue creada antes de que se añadieran esos módulos.
+    const MODULOS_GARANTIZADOS = {
+      super_admin:       ["logs", "auditoria"],
+      agente_soporte_ti: ["logs"],
+    };
+    for (const [rol, extras] of Object.entries(MODULOS_GARANTIZADOS)) {
+      for (const modulo of extras) {
+        if (!configuracionRoles[rol]) configuracionRoles[rol] = [];
+        if (!configuracionRoles[rol].includes(modulo)) {
+          configuracionRoles[rol].push(modulo);
+          // Persiste en la BD de forma silenciosa para que quede registrado
+          pool.query(
+            "INSERT IGNORE INTO rol_modulo (rol_clave, modulo_clave) VALUES (?, ?)",
+            [rol, modulo]
+          ).catch(() => {});
+        }
+      }
+    }
+    // ── Auto-migración: asegurar que 'logs' esté en la tabla modulos ──────────
+    if (hasTable("modulos")) {
+      pool.query(
+        "INSERT IGNORE INTO modulos (clave, nombre, activo, orden_menu) VALUES ('logs', 'Logs / Salud de Plataforma', 1, 11)"
+      ).catch(() => {});
+    }
+    // ──────────────────────────────────────────────────────────────────────────
   }
 
   if (hasTable("horarios")) {
@@ -1798,7 +1826,22 @@ module.exports = {
   // Configuración de roles
   MODULOS_SISTEMA,
   getConfiguracionRoles: () => ({ ...configuracionRoles }),
-  getModulosDeRol: (rol) => configuracionRoles[rol] || [],
+  /**
+   * Devuelve los módulos del rol.
+   * Garantiza que super_admin y agente_soporte_ti siempre tengan
+   * los módulos restringidos (logs, auditoria) aunque la BD no los
+   * incluya (puede pasar cuando la BD se creó antes de añadir esos módulos).
+   */
+  getModulosDeRol: (rol) => {
+    const MODULOS_GARANTIZADOS = {
+      super_admin:        ["logs", "auditoria"],
+      agente_soporte_ti:  ["logs"],
+    };
+    const mods   = [...(configuracionRoles[rol] || [])];
+    const extras = MODULOS_GARANTIZADOS[rol] || [];
+    extras.forEach((m) => { if (!mods.includes(m)) mods.push(m); });
+    return mods;
+  },
   updateModulosDeRol,
   // Grupos
   getGrupos,

@@ -23,8 +23,10 @@ const reportesRoutes = require("./src/routes/reportes.routes");
 const configRoutes = require("./src/routes/config.routes");
 const auditoriaRoutes = require("./src/routes/auditoria.routes");
 const aclaracionesRoutes = require("./src/routes/aclaraciones.routes");
+const logsRoutes = require("./src/routes/logs.routes");
 const { auditarAccion } = require("./src/middleware/auditoria.middleware");
 const notifService = require("./src/services/notificaciones.service");
+const logsService  = require("./src/services/logs.service");
 const store = require("./src/data/store");
 
 const app = express();
@@ -60,6 +62,8 @@ app.use(async (req, res, next) => {
   next();
 });
 app.use(auditarAccion);
+// Contar peticiones para métricas de salud
+app.use((req, _res, next) => { logsService.incrementRequests(); next(); });
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
@@ -75,6 +79,7 @@ app.use("/api/reportes", reportesRoutes);
 app.use("/api/config", configRoutes);
 app.use("/api/auditoria", auditoriaRoutes);
 app.use("/api/aclaraciones", aclaracionesRoutes);
+app.use("/api/logs", logsRoutes);
 app.get("/api/health", (req, res) =>
   res.json({
     status: "OK",
@@ -86,6 +91,13 @@ app.get("/api/health", (req, res) =>
 app.use((req, res) => res.status(404).json({ error: "Ruta no encontrada" }));
 app.use((err, req, res, _next) => {
   console.error(err);
+  // Registrar en el buffer de logs de plataforma
+  logsService.logError(
+    err.message || "Error interno del servidor",
+    `${req.method} ${req.path}`,
+    err.stack || null,
+    "error"
+  );
   res.status(500).json({ error: "Error interno del servidor" });
 });
 

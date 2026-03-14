@@ -129,7 +129,8 @@ export const crearRegistro = (latitud, longitud, motivoFueraHorario = null, sucu
     ...(motivoFueraGeocerca ? { motivoFueraGeocerca } : {}),
   } });
 
-export const forgotPassword = (email) => request("/auth/forgot-password", { method: "POST", body: { email } });
+export const forgotPassword  = (email)           => request("/auth/forgot-password", { method: "POST", body: { email } });
+export const resetPassword   = (token, password) => request("/auth/reset-password",  { method: "POST", body: { token, password } });
 export const crearRegistroManual = (data) => request("/registros/manual", { method: "POST", body: data });
 export const actualizarRegistroManual = (id, data) => request(`/registros/${id}/manual`, { method: "PUT", body: data });
 export const aprobarRegistro = (id) => request(`/registros/${id}/aprobar`, { method: "PUT" });
@@ -165,6 +166,15 @@ export const getReporteMinutos = (filtros = {}) => {
 export const getReporteIncidencias = (filtros = {}) => {
   const params = new URLSearchParams(filtros).toString();
   return request(`/reportes/incidencias?${params}`);
+};
+
+// ─── Logs / Salud de plataforma ───────────────────────────────────────────────
+export const getLogsHealth = () => request("/logs/salud");
+export const getLogsErrores = (filtros = {}) => {
+  const params = new URLSearchParams(
+    Object.fromEntries(Object.entries(filtros).filter(([, v]) => v !== "" && v !== null && v !== undefined))
+  ).toString();
+  return request(`/logs/errores${params ? "?" + params : ""}`);
 };
 
 // ─── Auditoría ────────────────────────────────────────────────────────────────

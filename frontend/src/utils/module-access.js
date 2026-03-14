@@ -1,6 +1,6 @@
 const DEFAULT_MODULES_BY_ROLE = {
-  super_admin: ["dashboard", "eventos", "incidencias", "reportes", "sucursales", "empleados", "grupos", "mapa", "administracion", "auditoria", "notificaciones"],
-  agente_soporte_ti: ["dashboard", "eventos", "incidencias", "reportes", "sucursales", "empleados", "grupos", "mapa", "administracion", "notificaciones"],
+  super_admin: ["dashboard", "eventos", "incidencias", "reportes", "sucursales", "empleados", "grupos", "mapa", "administracion", "auditoria", "logs", "notificaciones"],
+  agente_soporte_ti: ["dashboard", "eventos", "incidencias", "reportes", "sucursales", "empleados", "grupos", "mapa", "administracion", "logs", "notificaciones"],
   supervisor_sucursales: ["dashboard", "eventos", "incidencias", "reportes", "empleados", "grupos", "mapa", "notificaciones"],
   agente_control_asistencia: ["dashboard", "eventos", "incidencias", "reportes", "mapa", "notificaciones"],
   visor_reportes: ["dashboard", "reportes", "mapa", "notificaciones"],
