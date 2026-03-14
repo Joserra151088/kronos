@@ -1,0 +1,166 @@
+/**
+ * Auditoria.jsx
+ * Solo super_admin. Registro de todas las acciones del sistema.
+ */
+import { useState, useEffect, useCallback } from "react";
+import { getAuditoria, getUsuarios } from "../utils/api";
+
+const HOY = new Date().toISOString().split("T")[0];
+const HACE_7 = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+
+const METODOS = ["", "GET", "POST", "PUT", "DELETE"];
+const ROWS_PER_PAGE = 50;
+
+const Auditoria = () => {
+  const [entradas,  setEntradas]  = useState([]);
+  const [usuarios,  setUsuarios]  = useState([]);
+  const [total,     setTotal]     = useState(0);
+  const [page,      setPage]      = useState(1);
+  const [cargando,  setCargando]  = useState(false);
+  const [filtros,   setFiltros]   = useState({
+    usuarioId: "", accion: "", desde: HACE_7, hasta: HOY, metodo: "",
+  });
+
+  const buscar = useCallback(async (pg = 1) => {
+    setCargando(true);
+    try {
+      const params = { ...filtros, page: pg, limit: ROWS_PER_PAGE };
+      const res = await getAuditoria(params);
+      setEntradas(res.items || []);
+      setTotal(res.total || 0);
+      setPage(pg);
+    } catch (e) { console.error(e); }
+    finally { setCargando(false); }
+  }, [filtros]);
+
+  useEffect(() => {
+    getUsuarios().then(setUsuarios).catch(() => {});
+    buscar(1);
+  }, []);
+
+  const totalPaginas = Math.ceil(total / ROWS_PER_PAGE);
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">🔍 Auditoría del sistema</h1>
+          <p className="page-subtitle">Registro de acciones de usuarios — {total} evento{total !== 1 ? "s" : ""} encontrado{total !== 1 ? "s" : ""}</p>
+        </div>
+        <button className="btn btn-secondary" onClick={() => buscar(1)} disabled={cargando}>
+          {cargando ? "⟳ Cargando…" : "⟳ Actualizar"}
+        </button>
+      </div>
+
+      {/* Filtros */}
+      <div className="card" style={{ padding: "16px 20px", marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ fontSize: 12 }}>Usuario</label>
+            <select className="form-control filter-select" value={filtros.usuarioId}
+              onChange={e => setFiltros({...filtros, usuarioId: e.target.value})}>
+              <option value="">Todos</option>
+              {usuarios.map(u => (
+                <option key={u.id} value={u.id}>{u.nombre} {u.apellido}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ fontSize: 12 }}>Acción (texto)</label>
+            <input className="form-control" placeholder="Buscar acción..." value={filtros.accion}
+              onChange={e => setFiltros({...filtros, accion: e.target.value})} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ fontSize: 12 }}>Desde</label>
+            <input type="date" className="form-control" value={filtros.desde}
+              onChange={e => setFiltros({...filtros, desde: e.target.value})} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ fontSize: 12 }}>Hasta</label>
+            <input type="date" className="form-control" value={filtros.hasta}
+              onChange={e => setFiltros({...filtros, hasta: e.target.value})} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ fontSize: 12 }}>Método</label>
+            <select className="form-control filter-select" value={filtros.metodo}
+              onChange={e => setFiltros({...filtros, metodo: e.target.value})}>
+              {METODOS.map(m => <option key={m} value={m}>{m || "Todos"}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => buscar(1)} disabled={cargando}>
+              🔍 Buscar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabla */}
+      {cargando ? (
+        <div className="loading">Cargando registros…</div>
+      ) : entradas.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">🔍</div>
+          <p>No hay registros para los filtros seleccionados.</p>
+        </div>
+      ) : (
+        <div className="data-table-wrapper">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Fecha / Hora</th>
+                <th>Usuario</th>
+                <th>Rol</th>
+                <th>Acción</th>
+                <th>Método</th>
+                <th>Ruta</th>
+                <th>Estado</th>
+                <th>IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entradas.map((e) => (
+                <tr key={e.id}>
+                  <td style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 12, whiteSpace: "nowrap" }}>
+                    {new Date(e.timestamp).toLocaleString("es-MX")}
+                  </td>
+                  <td>{e.usuarioNombre || "—"}</td>
+                  <td style={{ fontSize: 12, color: "var(--text2)" }}>{e.usuarioRol}</td>
+                  <td>{e.accion}</td>
+                  <td>
+                    <span className={`badge ${
+                      e.metodo === "GET"    ? "badge-default"  :
+                      e.metodo === "POST"   ? "badge-success"  :
+                      e.metodo === "PUT"    ? "badge-warning"  :
+                      e.metodo === "DELETE" ? "badge-danger"   : "badge-default"
+                    }`} style={{ fontSize: 11 }}>{e.metodo}</span>
+                  </td>
+                  <td style={{ fontSize: 11, color: "var(--text2)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {e.ruta}
+                  </td>
+                  <td>
+                    <span className={`badge ${e.exito ? "badge-success" : "badge-danger"}`} style={{ fontSize: 11 }}>
+                      {e.statusCode}
+                    </span>
+                  </td>
+                  <td style={{ fontSize: 11, color: "var(--text2)", fontFamily: "monospace" }}>{e.ip}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Paginación */}
+      {totalPaginas > 1 && (
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 16, alignItems: "center" }}>
+          <button className="btn btn-secondary btn-sm" disabled={page === 1} onClick={() => buscar(page - 1)}>← Anterior</button>
+          <span style={{ fontSize: "0.85rem", color: "var(--text2)" }}>Página {page} de {totalPaginas}</span>
+          <button className="btn btn-secondary btn-sm" disabled={page === totalPaginas} onClick={() => buscar(page + 1)}>Siguiente →</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Auditoria;

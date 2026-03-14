@@ -1,0 +1,17 @@
+{
+  "name": "access-control",
+  "version": "1.0.0",
+  "description": "Sistema de Control de Acceso por Sucursales",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\" --names \"backend,frontend\" --prefix-colors \"blue,green\"",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "start": "concurrently \"npm start --prefix backend\" \"npm run preview --prefix frontend\" --names \"backend,frontend\" --prefix-colors \"blue,green\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "mysql2": "^3.19.1"
+  }
+}
