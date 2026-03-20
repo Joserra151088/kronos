@@ -4,6 +4,7 @@
  */
 
 const express = require("express");
+const multer = require("multer");
 const router = express.Router();
 const store = require("../data/store");
 const { dentroDeGeocerca } = require("../utils/geo");
@@ -12,6 +13,15 @@ const { verificarToken } = require("../middleware/auth");
 const { requireRoles, ROLES } = require("../middleware/roles");
 const notifService = require("../services/notificaciones.service");
 const { getAllowedSucursalIds, canAccessSucursal, canAccessUsuario } = require("../utils/access-scope");
+const { saveFile } = require("../services/storage.service");
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => {
+    cb(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype));
+  },
+});
 
 router.use(verificarToken);
 
@@ -176,7 +186,49 @@ router.get("/minutos", (req, res) => {
   return res.json({ desde, hasta, totalMinutos, dias });
 });
 
-router.post("/", (req, res) => {
+router.get("/personal-hoy", requireRoles(
+  ROLES.SUPER_ADMIN,
+  ROLES.ADMINISTRADOR_GENERAL,
+  ROLES.AGENTE_SOPORTE_TI,
+  ROLES.SUPERVISOR_SUCURSALES,
+  ROLES.AGENTE_CONTROL_ASISTENCIA,
+  ROLES.NOMINAS,
+), (req, res) => {
+  const hoy = new Date().toISOString().split("T")[0];
+  let registros = store.getRegistros({ fecha: hoy });
+  registros = filtrarPorAlcance(req, registros, (r) => r.sucursalId);
+
+  // Deduplicar por usuarioId, quedarse con el último registro del día
+  const porUsuario = {};
+  registros.forEach((r) => {
+    if (!porUsuario[r.usuarioId] || r.hora > porUsuario[r.usuarioId].hora) {
+      porUsuario[r.usuarioId] = r;
+    }
+  });
+
+  const resultado = Object.values(porUsuario).map((r) => {
+    const u = store.getUsuarioById(r.usuarioId);
+    const puesto = u?.puestoId ? store.getPuestoById(u.puestoId) : null;
+    const sucursal = u?.sucursalId ? store.getSucursalById(u.sucursalId) : null;
+    return {
+      usuarioId: r.usuarioId,
+      nombre: u ? `${u.nombre} ${u.apellido}` : "N/A",
+      fotoUrl: u?.fotoUrl || null,
+      hora: r.hora,
+      tipo: r.tipo,
+      puestoNombre: puesto?.nombre || null,
+      sucursalNombre: sucursal?.nombre || null,
+    };
+  }).sort((a, b) => b.hora.localeCompare(a.hora));
+
+  return res.json(resultado);
+});
+
+router.post("/", upload.single("foto"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Se requiere una foto del empleado para registrar la asistencia." });
+  }
+
   const { latitud, longitud, motivoFueraHorario, motivoFueraGeocerca, sucursalId: sucursalIdBody } = req.body;
 
   if (latitud === undefined || longitud === undefined) {
@@ -185,9 +237,50 @@ router.post("/", (req, res) => {
 
   const esMedicoGuardia = req.user.rol === ROLES.MEDICO_DE_GUARDIA;
 
+  // ── Regla de bloqueo: incidencia aprobada que cubre hoy ──────────────────
+  const hoyFecha = new Date().toISOString().split("T")[0];
+  const incidenciasActivasHoy = store.getIncidenciasActivasParaUsuario(req.user.id, hoyFecha);
+  const incidenciaBloqueo = incidenciasActivasHoy.find((inc) => {
+    const tipo = store.getTipoIncidenciaById(inc.tipoIncidenciaId);
+    return tipo && tipo.categoriaBloqueo !== null;
+  });
+
+  if (incidenciaBloqueo) {
+    const tipo = store.getTipoIncidenciaById(incidenciaBloqueo.tipoIncidenciaId);
+    const categoria = tipo?.categoriaBloqueo;
+    const empleado = store.getUsuarioById(req.user.id);
+    const nombreEmpleado = empleado ? `${empleado.nombre} ${empleado.apellido}` : "Un empleado";
+
+    // Notificar a todos los roles administrativos
+    const receptores = store.getSupervisoresPorRoles([
+      ROLES.SUPER_ADMIN,
+      ROLES.AGENTE_SOPORTE_TI,
+      ROLES.SUPERVISOR_SUCURSALES,
+      ROLES.AGENTE_CONTROL_ASISTENCIA,
+    ]);
+    receptores.forEach((r) => {
+      if (r.id !== req.user.id) {
+        notifService.crearNotificacion({
+          paraUsuarioId: r.id,
+          deUsuarioId: req.user.id,
+          tipo: "bloqueo_registro",
+          titulo: "Intento de registro bloqueado",
+          mensaje: `${nombreEmpleado} intentó registrar asistencia pero tiene ${categoria} aprobada para hoy.`,
+          referenciaId: incidenciaBloqueo.id,
+        });
+      }
+    });
+
+    return res.status(403).json({
+      error: `No puedes registrar asistencia: tienes una ${categoria} aprobada para hoy.`,
+      categoriaBloqueo: categoria,
+      incidenciaId: incidenciaBloqueo.id,
+      bloqueado: true,
+    });
+  }
+
   // El cooldown solo aplica si el último registro fue HOY.
   // Al cambiar de día, los registros se reinician y no hay cooldown.
-  const hoyFecha = new Date().toISOString().split("T")[0];
   const ultimo = store.getLastRegistroDeUsuario(req.user.id);
   if (ultimo && ultimo.fecha === hoyFecha) {
     const diffMs = Date.now() - new Date(ultimo.creadoEn).getTime();
@@ -285,6 +378,14 @@ router.post("/", (req, res) => {
     ...((!dentro && motivoFueraGeocerca) ? { fueraDeGeocerca: true, motivoFueraGeocerca } : {}),
   });
 
+  try {
+    const fotoResult = await saveFile(req.file);
+    store.updateRegistro(nuevoRegistro.id, { fotoUrl: fotoResult.url });
+    nuevoRegistro.fotoUrl = fotoResult.url;
+  } catch (errFoto) {
+    console.error("Error al guardar foto del registro:", errFoto.message);
+  }
+
   emitirEventoRegistro("creado", nuevoRegistro);
 
   return res.status(201).json({
@@ -304,6 +405,12 @@ router.post("/manual", requireRoles(
 
   if (!usuarioId || !tipo || !sucursalId || !fecha || !hora) {
     return res.status(400).json({ error: "usuarioId, tipo, sucursalId, fecha y hora son obligatorios" });
+  }
+
+  // No se puede registrar asistencia en fechas futuras
+  const hoyStr = new Date().toISOString().split("T")[0];
+  if (fecha > hoyStr) {
+    return res.status(400).json({ error: "No se puede registrar asistencia en fechas futuras." });
   }
 
   if (!validarAccesoASucursal(req, sucursalId)) {
@@ -364,6 +471,8 @@ router.put("/:id/manual", requireRoles(...ROLES_EDICION_MANUAL), (req, res) => {
     tipo,
     fecha,
     hora,
+    // horaModificada se actualiza solo cuando la hora realmente cambia
+    horaModificada: hora !== registro.hora ? hora : (registro.horaModificada || null),
     justificacion: justificacion || registro.justificacion || "",
     esManual: true,
     editadoManual: true,

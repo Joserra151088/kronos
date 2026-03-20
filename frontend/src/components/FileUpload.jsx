@@ -1,31 +1,59 @@
 /**
  * FileUpload.jsx
  * Componente reutilizable para subir archivos (imágenes/PDF).
- * Preparado para S3: usa FormData estándar.
+ * Valida MIME type, extensión y tamaño antes de aceptar el archivo.
  */
 
 import { useRef, useState } from "react";
 
-const TIPOS_ACEPTADOS = "image/jpeg,image/png,image/webp,application/pdf";
-const MAX_SIZE_MB = 10;
+const MIME_PERMITIDOS = new Set([
+  "image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf",
+]);
+const EXT_PERMITIDAS = new Set([".jpg", ".jpeg", ".png", ".webp", ".pdf"]);
+const ACCEPT_ATTR    = "image/jpeg,image/png,image/webp,application/pdf";
+const MAX_SIZE_MB    = 10;
 
-const FileUpload = ({ onChange, archivoActual, label = "Adjuntar evidencia (imagen o PDF)" }) => {
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const FileUpload = ({ onChange, archivoActual, label = "Adjuntar evidencia (imagen o PDF)", requerido = false }) => {
   const inputRef = useRef(null);
   const [preview, setPreview] = useState(null);
-  const [nombre, setNombre] = useState("");
-  const [error, setError] = useState("");
+  const [nombre, setNombre]   = useState("");
+  const [tamano, setTamano]   = useState("");
+  const [error, setError]     = useState("");
 
   const handleChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // ── Validar MIME type ───────────────────────────────────────────────
+    if (!MIME_PERMITIDOS.has(file.type)) {
+      setError(`Tipo de archivo no permitido: "${file.type || "desconocido"}". Solo se aceptan JPG, PNG, WebP y PDF.`);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+
+    // ── Validar extensión ───────────────────────────────────────────────
+    const ext = "." + file.name.split(".").pop().toLowerCase();
+    if (!EXT_PERMITIDAS.has(ext)) {
+      setError(`Extensión no permitida (${ext}). Solo: .jpg, .png, .webp, .pdf`);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+
+    // ── Validar tamaño ──────────────────────────────────────────────────
     if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError(`El archivo no debe superar ${MAX_SIZE_MB} MB`);
+      setError(`El archivo pesa ${formatBytes(file.size)}, supera el límite de ${MAX_SIZE_MB} MB.`);
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
 
     setError("");
     setNombre(file.name);
+    setTamano(formatBytes(file.size));
     onChange(file);
 
     if (file.type.startsWith("image/")) {
@@ -47,17 +75,20 @@ const FileUpload = ({ onChange, archivoActual, label = "Adjuntar evidencia (imag
 
   return (
     <div className="file-upload-container">
-      <label className="file-upload-label">{label}</label>
+      <label className="file-upload-label">
+        {label}
+        {requerido && <span style={{ color: "#ef4444", marginLeft: 4 }}>*</span>}
+      </label>
 
       {!nombre ? (
         <div className="file-upload-area" onClick={() => inputRef.current?.click()}>
           <span className="file-upload-icon">📎</span>
           <span>Haz clic o arrastra un archivo</span>
-          <span className="file-upload-hint">JPG, PNG, WebP o PDF · máx {MAX_SIZE_MB}MB</span>
+          <span className="file-upload-hint">JPG, PNG, WebP o PDF · máx {MAX_SIZE_MB} MB</span>
           <input
             ref={inputRef}
             type="file"
-            accept={TIPOS_ACEPTADOS}
+            accept={ACCEPT_ATTR}
             onChange={handleChange}
             style={{ display: "none" }}
           />
@@ -71,6 +102,7 @@ const FileUpload = ({ onChange, archivoActual, label = "Adjuntar evidencia (imag
           )}
           <div className="file-upload-info">
             <span className="file-upload-nombre">{nombre}</span>
+            {tamano && <span style={{ fontSize: 11, color: "var(--text2)" }}>{tamano}</span>}
             <button className="btn-danger-sm" onClick={limpiar}>Quitar</button>
           </div>
         </div>

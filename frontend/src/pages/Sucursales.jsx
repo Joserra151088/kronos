@@ -9,10 +9,12 @@
 
 import { useState, useEffect } from "react";
 import { getSucursales, crearSucursal, actualizarSucursal, eliminarSucursal } from "../utils/api";
+import { toastError, confirmar } from "../utils/toast";
 
 /** Estado inicial vacío para el formulario de sucursal */
 const FORM_VACIO = {
   nombre: "", direccion: "", ciudad: "", estado: "",
+  tipo: "sucursal",   // "sucursal" | "corporativo"
   geocerca: { latitud: "", longitud: "", radio: 200 },
 };
 
@@ -64,6 +66,7 @@ const Sucursales = () => {
       direccion: s.direccion,
       ciudad: s.ciudad,
       estado: s.estado,
+      tipo: s.tipo || "sucursal",
       geocerca: { ...s.geocerca },
     });
     setError("");
@@ -112,17 +115,43 @@ const Sucursales = () => {
   };
 
   /**
-   * handleEliminar
-   * Solicita confirmación y desactiva la sucursal seleccionada.
-   * @param {string} id - ID de la sucursal
+   * handleDesactivar
+   * Desactiva (baja lógica) la sucursal sin eliminarla de la BD.
    */
-  const handleEliminar = async (id) => {
-    if (!window.confirm("¿Desactivar esta sucursal?")) return;
+  const handleDesactivar = async (id, nombre) => {
+    if (!(await confirmar(`¿Desactivar la sucursal "${nombre}"? Los empleados asignados quedarán sin sucursal activa.`, "Confirmar", "warning"))) return;
+    try {
+      await actualizarSucursal(id, { activa: false });
+      await cargarSucursales();
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
+  /**
+   * handleReactivar
+   * Reactiva una sucursal previamente desactivada.
+   */
+  const handleReactivar = async (id) => {
+    try {
+      await actualizarSucursal(id, { activa: true });
+      await cargarSucursales();
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
+  /**
+   * handleEliminar
+   * Elimina permanentemente la sucursal (solo si está inactiva).
+   */
+  const handleEliminar = async (id, nombre) => {
+    if (!(await confirmar(`ELIMINAR PERMANENTEMENTE la sucursal "${nombre}". Esta acción no se puede deshacer. ¿Continuar?`, "Eliminar", "danger"))) return;
     try {
       await eliminarSucursal(id);
       await cargarSucursales();
     } catch (err) {
-      alert(err.message);
+      toastError(err);
     }
   };
 
@@ -145,14 +174,20 @@ const Sucursales = () => {
         {sucursales.map((s) => (
           <div key={s.id} className={`card sucursal-card ${!s.activa ? "inactiva" : ""}`}>
             <div className="sucursal-header">
-              <span className="sucursal-icon">🏢</span>
+              <span className="sucursal-icon">{s.tipo === "corporativo" ? "🏛️" : "🏢"}</span>
               <div>
                 <h3>{s.nombre}</h3>
                 <p>{s.ciudad}, {s.estado}</p>
               </div>
-              <span className={`badge ${s.activa ? "badge-success" : "badge-danger"}`}>
-                {s.activa ? "Activa" : "Inactiva"}
-              </span>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                <span className={`badge ${s.activa ? "badge-success" : "badge-danger"}`}>
+                  {s.activa ? "Activa" : "Inactiva"}
+                </span>
+                <span className={`badge ${s.tipo === "corporativo" ? "badge-info" : "badge-secondary"}`}
+                  style={{ fontSize: 11 }}>
+                  {s.tipo === "corporativo" ? "🏛️ Corporativo" : "🏢 Sucursal"}
+                </span>
+              </div>
             </div>
 
             <div className="sucursal-info">
@@ -176,11 +211,22 @@ const Sucursales = () => {
               <button className="btn btn-secondary btn-sm" onClick={() => abrirEditar(s)}>
                 ✏️ Editar
               </button>
-              {s.activa && (
-                <button className="btn btn-danger btn-sm" onClick={() => handleEliminar(s.id)}>
-                  🗑️ Desactivar
+              {s.activa ? (
+                <button className="btn btn-warning btn-sm" onClick={() => handleDesactivar(s.id, s.nombre)}>
+                  ⏸️ Desactivar
+                </button>
+              ) : (
+                <button className="btn btn-success btn-sm" onClick={() => handleReactivar(s.id)}>
+                  ▶️ Activar
                 </button>
               )}
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={() => handleEliminar(s.id, s.nombre)}
+                title="Eliminar permanentemente"
+              >
+                🗑️ Eliminar
+              </button>
             </div>
           </div>
         ))}
@@ -210,6 +256,17 @@ const Sucursales = () => {
                 <div className="form-group">
                   <label>Nombre de la sucursal *</label>
                   <input name="nombre" value={form.nombre} onChange={handleChange} required placeholder="Sucursal Centro" />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Tipo de ubicación *</label>
+                  <select name="tipo" value={form.tipo} onChange={handleChange} required>
+                    <option value="sucursal">🏢 Sucursal</option>
+                    <option value="corporativo">🏛️ Corporativo</option>
+                  </select>
+                  <p className="form-hint">Indica si esta ubicación es una sucursal o la sede corporativa.</p>
                 </div>
               </div>
 

@@ -7,9 +7,9 @@
  * - Si el registro cae fuera del horario + tolerancia, solicita motivo.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
-import { getRegistrosHoy, crearRegistro, getSucursales, getHorarios } from "../utils/api";
+import { getRegistrosHoy, crearRegistroConFoto, getSucursales, getHorarios } from "../utils/api";
 
 const MEDICO_GUARDIA_ROL = "medico_de_guardia";
 
@@ -65,6 +65,7 @@ const Dashboard = () => {
   const [horario, setHorario]                   = useState(null);
   const [estado, setEstado]                     = useState("idle");
   const [mensaje, setMensaje]                   = useState("");
+  const [modalGPSDenegado, setModalGPSDenegado] = useState(false);
 
   // Médico de guardia: ubicación seleccionada para registrar
   const esMedicoGuardia = usuario?.rol === MEDICO_GUARDIA_ROL;
@@ -79,6 +80,28 @@ const Dashboard = () => {
   const [modalFueraGeocerca, setModalFueraGeocerca] = useState(false);
   const [motivoFueraGeocerca, setMotivoFueraGeocerca] = useState("");
   const [infoGeocerca, setInfoGeocerca]           = useState({ distancia: 0, radio: 0 });
+
+  // Modal bloqueo por incidencia activa (vacaciones/incapacidad/falta)
+  const [modalBloqueo, setModalBloqueo] = useState(null); // { categoriaBloqueo, incidenciaId, error }
+
+  // Modal cámara
+  const [modalCamara, setModalCamara]       = useState(false);
+  const [fotoBlob, setFotoBlob]             = useState(null);   // Blob listo para enviar
+  const [fotoBlobUrl, setFotoBlobUrl]       = useState(null);   // URL temporal para preview
+  const videoRef                            = useRef(null);
+  const canvasRef                           = useRef(null);
+  const streamRef                           = useRef(null);     // guarda el MediaStream activo
+
+  // Iniciar/detener stream cuando se abre/cierra el modal de cámara
+  useEffect(() => {
+    if (modalCamara && !fotoBlob) {
+      iniciarStreamCamara();
+    }
+    return () => {
+      if (!modalCamara) detenerCamara();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalCamara]);
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -95,7 +118,10 @@ const Dashboard = () => {
     getSucursales().then((lista) => {
       setTodasSucursales(lista.filter((s) => s.activa));
       if (usuario?.sucursalId) {
-        setSucursal(lista.find((x) => x.id === usuario.sucursalId) || null);
+        setSucursal(lista.find((x) => x.id === usuario.sucursalId) || { nombre: "Corporativo" });
+      } else {
+        // Usuario sin sucursal asignada (corporativo/admin)
+        setSucursal({ nombre: "Corporativo" });
       }
     });
     // Cargar horario del usuario
@@ -106,20 +132,105 @@ const Dashboard = () => {
     }
   }, [cargarDatos, usuario]);
 
+  /** Detiene el stream de la cámara y limpia recursos */
+  const detenerCamara = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  };
+
+  /** Abre el modal de cámara e inicia el stream */
+  const abrirCamara = async () => {
+    setFotoBlob(null);
+    if (fotoBlobUrl) { URL.revokeObjectURL(fotoBlobUrl); setFotoBlobUrl(null); }
+    setModalCamara(true);
+  };
+
+  /** Llamado por useEffect cuando el modal de cámara se abre */
+  const iniciarStreamCamara = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch {
+      setModalCamara(false);
+      setMensaje("No se pudo acceder a la cámara. Verifica los permisos del navegador.");
+      setEstado("error");
+      setTimeout(() => setEstado("idle"), 5000);
+    }
+  };
+
+  /** Captura el frame actual del video en el canvas */
+  const capturarFoto = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      setFotoBlob(blob);
+      const url = URL.createObjectURL(blob);
+      setFotoBlobUrl(url);
+      detenerCamara();
+    }, "image/jpeg", 0.85);
+  };
+
+  /** Repite la captura: limpia la foto y reinicia el stream */
+  const repetirFoto = () => {
+    if (fotoBlobUrl) { URL.revokeObjectURL(fotoBlobUrl); setFotoBlobUrl(null); }
+    setFotoBlob(null);
+    iniciarStreamCamara();
+  };
+
+  /** Confirma la foto y cierra el modal de cámara para continuar con GPS */
+  const confirmarFotoYRegistrar = () => {
+    setModalCamara(false);
+    iniciarGPS();
+  };
+
+  /** Cierra el modal de cámara sin registrar */
+  const cerrarCamara = () => {
+    detenerCamara();
+    if (fotoBlobUrl) { URL.revokeObjectURL(fotoBlobUrl); setFotoBlobUrl(null); }
+    setFotoBlob(null);
+    setModalCamara(false);
+  };
+
   /** Ejecuta el registro con las coordenadas ya obtenidas */
-  const ejecutarRegistro = async (lat, lng, motivo = null, sucursalIdOverride = null, motivoGeocerca = null) => {
+  const ejecutarRegistro = async (lat, lng, foto, motivo = null, sucursalIdOverride = null, motivoGeocerca = null) => {
     setEstado("registrando");
     setMensaje("Registrando asistencia…");
     try {
-      const result = await crearRegistro(lat, lng, motivo, sucursalIdOverride, motivoGeocerca);
+      const result = await crearRegistroConFoto(lat, lng, foto, {
+        ...(motivo ? { motivoFueraHorario: motivo } : {}),
+        ...(motivoGeocerca ? { motivoFueraGeocerca: motivoGeocerca } : {}),
+        ...(sucursalIdOverride ? { sucursalId: sucursalIdOverride } : {}),
+      });
       setMensaje(result.mensaje);
       setEstado("exito");
+      setFotoBlob(null);
       await cargarDatos();
       setTimeout(() => setEstado("idle"), 3000);
     } catch (err) {
+      // Si el registro está bloqueado por incidencia activa
+      if (err.bloqueado) {
+        setModalBloqueo({
+          categoriaBloqueo: err.categoriaBloqueo,
+          incidenciaId: err.incidenciaId,
+          error: err.message,
+        });
+        setEstado("idle");
+        setMensaje("");
+        return;
+      }
       // Si el error es por geocerca, mostrar modal para pedir motivo
       if (err.fueraDeGeocerca) {
-        setCoordsCache({ lat, lng });
+        setCoordsCache({ lat, lng, foto });
         setInfoGeocerca({ distancia: err.distancia || 0, radio: err.radioPermitido || 0 });
         setMotivoFueraGeocerca("");
         setModalFueraGeocerca(true);
@@ -140,7 +251,13 @@ const Dashboard = () => {
     return ubicacionSeleccionada;
   };
 
+  /** Paso 1: click en "Registrar" → abre el modal de cámara */
   const handleRegistrar = () => {
+    abrirCamara();
+  };
+
+  /** Paso 2: después de confirmar foto → obtener GPS y registrar */
+  const iniciarGPS = () => {
     if (!navigator.geolocation) {
       setMensaje("Tu navegador no soporta geolocalización.");
       setEstado("error");
@@ -149,6 +266,8 @@ const Dashboard = () => {
     setEstado("obteniendo-gps");
     setMensaje("Obteniendo tu ubicación GPS…");
 
+    const fotoActual = fotoBlob; // capturar referencia antes del callback asíncrono
+
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
@@ -156,7 +275,7 @@ const Dashboard = () => {
 
         // ── Verificar si está fuera de horario ──────────────────────────────
         if (siguienteRegistro && verificarFueraDeHorario(horario, siguienteRegistro, horaActual)) {
-          setCoordsCache({ lat: latitude, lng: longitude });
+          setCoordsCache({ lat: latitude, lng: longitude, foto: fotoActual });
           setMotivoFueraHorario("");
           setModalFueraHorario(true);
           setEstado("idle");
@@ -164,16 +283,22 @@ const Dashboard = () => {
           return;
         }
 
-        await ejecutarRegistro(latitude, longitude, null, getSucursalIdParaRegistro());
+        await ejecutarRegistro(latitude, longitude, fotoActual, null, getSucursalIdParaRegistro());
       },
       (err) => {
-        setMensaje(
-          err.code === 1
-            ? "Permiso de ubicación denegado. Habilita el GPS en tu navegador."
-            : "No se pudo obtener tu ubicación."
-        );
-        setEstado("error");
-        setTimeout(() => setEstado("idle"), 5000);
+        if (err.code === 1) {
+          // Permiso denegado — mostrar modal con instrucciones
+          setModalGPSDenegado(true);
+          setEstado("idle");
+        } else {
+          setMensaje(
+            err.code === 2
+              ? "No se pudo determinar tu ubicación. Asegúrate de tener señal GPS o Wi-Fi activo."
+              : "Tiempo de espera agotado al obtener tu ubicación. Inténtalo de nuevo."
+          );
+          setEstado("error");
+          setTimeout(() => setEstado("idle"), 6000);
+        }
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -183,7 +308,7 @@ const Dashboard = () => {
     if (!motivoFueraHorario.trim()) return;
     setModalFueraHorario(false);
     if (coordsCache) {
-      await ejecutarRegistro(coordsCache.lat, coordsCache.lng, motivoFueraHorario.trim(), getSucursalIdParaRegistro());
+      await ejecutarRegistro(coordsCache.lat, coordsCache.lng, coordsCache.foto, motivoFueraHorario.trim(), getSucursalIdParaRegistro());
       setCoordsCache(null);
     }
   };
@@ -192,7 +317,7 @@ const Dashboard = () => {
     if (!motivoFueraGeocerca.trim()) return;
     setModalFueraGeocerca(false);
     if (coordsCache) {
-      await ejecutarRegistro(coordsCache.lat, coordsCache.lng, null, getSucursalIdParaRegistro(), motivoFueraGeocerca.trim());
+      await ejecutarRegistro(coordsCache.lat, coordsCache.lng, coordsCache.foto, null, getSucursalIdParaRegistro(), motivoFueraGeocerca.trim());
       setCoordsCache(null);
     }
   };
@@ -333,6 +458,78 @@ const Dashboard = () => {
         </div>
       )}
 
+      {/* ── Modal: cámara ─────────────────────────────────────────────────── */}
+      {modalCamara && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>📷 Tomar foto para el registro</h2>
+              <button className="modal-close" onClick={cerrarCamara}>✕</button>
+            </div>
+            <div className="modal-body" style={{ textAlign: "center" }}>
+              {/* Canvas oculto para captura */}
+              <canvas ref={canvasRef} style={{ display: "none" }} />
+
+              {!fotoBlobUrl ? (
+                /* ── Vista previa de la cámara ── */
+                <>
+                  <div style={{
+                    position: "relative", borderRadius: 10, overflow: "hidden",
+                    background: "#000", marginBottom: 14,
+                    aspectRatio: "4/3", display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                    {/* Marco guía */}
+                    <div style={{
+                      position: "absolute", inset: 0, border: "2px solid rgba(119,179,40,0.6)",
+                      borderRadius: 10, pointerEvents: "none",
+                    }} />
+                  </div>
+                  <p style={{ fontSize: "0.85rem", color: "var(--text2)", marginBottom: 16 }}>
+                    Asegúrate de que tu rostro sea visible antes de capturar.
+                  </p>
+                  <button className="btn btn-primary btn-xl" onClick={capturarFoto} style={{ width: "100%" }}>
+                    📸 Capturar foto
+                  </button>
+                </>
+              ) : (
+                /* ── Preview de la foto capturada ── */
+                <>
+                  <div style={{ position: "relative", borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
+                    <img
+                      src={fotoBlobUrl}
+                      alt="Foto capturada"
+                      style={{ width: "100%", borderRadius: 10, display: "block" }}
+                    />
+                    <div style={{
+                      position: "absolute", top: 8, right: 8,
+                      background: "rgba(119,179,40,0.9)", color: "#fff",
+                      borderRadius: 20, padding: "2px 10px", fontSize: "0.78rem", fontWeight: 700,
+                    }}>
+                      ✓ Foto lista
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button className="btn btn-secondary" onClick={repetirFoto} style={{ flex: 1 }}>
+                      🔄 Repetir
+                    </button>
+                    <button className="btn btn-primary" onClick={confirmarFotoYRegistrar} style={{ flex: 2 }}>
+                      ✅ Confirmar y registrar
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal: fuera de geocerca ───────────────────────────────────────── */}
       {modalFueraGeocerca && (
         <div className="modal-overlay" onClick={() => { setModalFueraGeocerca(false); setCoordsCache(null); }}>
@@ -428,6 +625,91 @@ const Dashboard = () => {
                   Continuar y registrar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: bloqueo por incidencia activa ───────────────────────────── */}
+      {modalBloqueo && (
+        <div className="modal-overlay" onClick={() => setModalBloqueo(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header" style={{ borderBottom: "3px solid var(--danger)" }}>
+              <h2>🚫 Registro Bloqueado</h2>
+              <button className="modal-close" onClick={() => setModalBloqueo(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ textAlign: "center", padding: "24px 20px" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>
+                {modalBloqueo.categoriaBloqueo === "vacaciones" ? "🏖️" :
+                 modalBloqueo.categoriaBloqueo === "incapacidad" ? "🩺" : "📋"}
+              </div>
+              <h3 style={{ marginBottom: 8 }}>
+                {modalBloqueo.categoriaBloqueo === "vacaciones" && "Estás en período de vacaciones"}
+                {modalBloqueo.categoriaBloqueo === "incapacidad" && "Tienes una incapacidad activa"}
+                {modalBloqueo.categoriaBloqueo === "falta" && "Tienes una falta registrada"}
+                {!modalBloqueo.categoriaBloqueo && "Tienes una incidencia activa"}
+              </h3>
+              <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                {modalBloqueo.error || "No puedes registrar asistencia mientras tienes una incidencia aprobada activa."}
+              </p>
+              <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 8 }}>
+                Tu supervisor ha sido notificado de este intento de registro.
+              </p>
+            </div>
+            <div className="modal-footer" style={{ justifyContent: "center" }}>
+              <button className="btn btn-secondary" onClick={() => setModalBloqueo(null)}>
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: GPS denegado ────────────────────────────────────────── */}
+      {modalGPSDenegado && (
+        <div className="modal-overlay" onClick={() => setModalGPSDenegado(false)}>
+          <div className="modal-box" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                📍 Permiso de ubicación requerido
+              </h3>
+            </div>
+            <div className="modal-body" style={{ padding: "20px 24px" }}>
+              <p style={{ marginBottom: 16, color: "var(--text2)", fontSize: 14 }}>
+                Para registrar tu asistencia necesitamos acceder a tu ubicación GPS.
+                Parece que tu navegador tiene el permiso bloqueado. Sigue estos pasos:
+              </p>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ padding: "12px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>
+                  <strong style={{ display: "block", marginBottom: 4 }}>🌐 Chrome / Edge</strong>
+                  <span>Haz clic en el ícono 🔒 en la barra de direcciones → Permisos del sitio → Ubicación → <strong>Permitir</strong></span>
+                </div>
+                <div style={{ padding: "12px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>
+                  <strong style={{ display: "block", marginBottom: 4 }}>🦊 Firefox</strong>
+                  <span>Haz clic en el ícono 🔒 → Permisos de conexión → Acceder a tu ubicación → <strong>Permitir siempre</strong></span>
+                </div>
+                <div style={{ padding: "12px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>
+                  <strong style={{ display: "block", marginBottom: 4 }}>🍎 Safari (Mac / iPhone)</strong>
+                  <span>Configuración → Safari → Ubicación → <strong>Preguntar</strong> o <strong>Permitir</strong></span>
+                </div>
+                <div style={{ padding: "12px 14px", background: "#fffbeb", borderRadius: 8, fontSize: 13, border: "1px solid #fde68a" }}>
+                  <strong style={{ display: "block", marginBottom: 4, color: "#92400e" }}>📱 Dispositivo móvil</strong>
+                  <span style={{ color: "#92400e" }}>Verifica en Ajustes → Privacidad → Ubicación que el navegador tenga permiso activo.</span>
+                </div>
+              </div>
+
+              <p style={{ marginTop: 16, fontSize: 13, color: "var(--text2)" }}>
+                Después de habilitar el permiso, <strong>recarga la página</strong> e intenta nuevamente.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setModalGPSDenegado(false)}>
+                Entendido
+              </button>
+              <button className="btn btn-primary" onClick={() => window.location.reload()}>
+                🔄 Recargar página
+              </button>
             </div>
           </div>
         </div>

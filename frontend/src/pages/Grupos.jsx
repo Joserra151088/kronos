@@ -18,6 +18,7 @@ import {
   actualizarSucursalesGrupo, eliminarGrupo,
   getUsuarios, getSucursales,
 } from "../utils/api";
+import { toastError, confirmar } from "../utils/toast";
 
 const Grupos = () => {
   const { usuario } = useAuth();
@@ -100,15 +101,15 @@ const Grupos = () => {
       setDetalleGrupo(null);
       await cargar();
     } catch (err) {
-      alert(err.message);
+      toastError(err);
     } finally {
       setGuardando(false);
     }
   };
 
   const handleDesactivar = async (id) => {
-    if (!window.confirm("¿Desactivar este grupo?")) return;
-    try { await eliminarGrupo(id); await cargar(); } catch (err) { alert(err.message); }
+    if (!(await confirmar("¿Desactivar este grupo?", "Confirmar", "warning"))) return;
+    try { await eliminarGrupo(id); await cargar(); } catch (err) { toastError(err); }
   };
 
   if (cargando) return <div className="loading">Cargando grupos…</div>;

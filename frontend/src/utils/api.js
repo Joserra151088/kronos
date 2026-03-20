@@ -54,6 +54,13 @@ export const getUsuarios = (filtros = {}) => {
   const params = new URLSearchParams(filtros).toString();
   return request(`/usuarios${params ? "?" + params : ""}`);
 };
+/** Versión paginada — devuelve { data, total, page, pages, limit } */
+export const getUsuariosPaginados = (filtros = {}) => {
+  const params = new URLSearchParams(filtros).toString();
+  return request(`/usuarios${params ? "?" + params : ""}`);
+};
+export const verificarEmailDisponible = (email, excluirId = "") =>
+  request(`/usuarios/verificar-email?email=${encodeURIComponent(email)}&excluirId=${excluirId}`);
 export const getPuestos = () => request("/puestos");
 export const getUsuario = (id) => request(`/usuarios/${id}`);
 export const crearUsuario = (data) => request("/usuarios", { method: "POST", body: data });
@@ -121,6 +128,18 @@ export const getRegistros = (filtros = {}) => {
   return request(`/registros${params ? "?" + params : ""}`);
 };
 export const getRegistrosHoy = () => request("/registros/hoy");
+export const crearRegistroConFoto = (latitud, longitud, foto, motivos = {}) => {
+  const fd = new FormData();
+  fd.append("foto", foto, "registro.jpg");
+  fd.append("latitud", latitud);
+  fd.append("longitud", longitud);
+  if (motivos.motivoFueraHorario) fd.append("motivoFueraHorario", motivos.motivoFueraHorario);
+  if (motivos.motivoFueraGeocerca) fd.append("motivoFueraGeocerca", motivos.motivoFueraGeocerca);
+  if (motivos.sucursalId) fd.append("sucursalId", motivos.sucursalId);
+  return requestMultipart("/registros", fd, "POST");
+};
+
+/** @deprecated Usar crearRegistroConFoto — se mantiene para compatibilidad con registros manuales */
 export const crearRegistro = (latitud, longitud, motivoFueraHorario = null, sucursalId = null, motivoFueraGeocerca = null) =>
   request("/registros", { method: "POST", body: {
     latitud, longitud,
@@ -200,3 +219,120 @@ export const createAclaracion = (data) =>
   request("/aclaraciones", { method: "POST", body: data });
 
 export const getAclaraciones = () => request("/aclaraciones");
+
+// ─── Anuncios / Notificaciones ────────────────────────────────────────────────
+/** Sidebar: solo anuncios activos, vigentes y cuya fechaInicio ya llegó */
+export const getAnuncios = () => request("/anuncios");
+/** Admin: todos los anuncios independientemente de su estado */
+export const getAnunciosAdmin = () => request("/anuncios?all=true");
+
+/** Crea un anuncio con imagen opcional (multipart/form-data) */
+export const crearAnuncioConImagen = (campos, imagenFile = null) => {
+  const fd = new FormData();
+  Object.entries(campos).forEach(([k, v]) => {
+    if (v !== null && v !== undefined) {
+      fd.append(k, typeof v === "object" ? JSON.stringify(v) : v);
+    }
+  });
+  if (imagenFile) fd.append("imagen", imagenFile);
+  return requestMultipart("/anuncios", fd, "POST");
+};
+
+/** Actualiza un anuncio con imagen opcional (multipart/form-data) */
+export const actualizarAnuncioConImagen = (id, campos, imagenFile = null) => {
+  const fd = new FormData();
+  Object.entries(campos).forEach(([k, v]) => {
+    if (v !== null && v !== undefined) {
+      fd.append(k, typeof v === "object" ? JSON.stringify(v) : v);
+    }
+  });
+  if (imagenFile) fd.append("imagen", imagenFile);
+  return requestMultipart(`/anuncios/${id}`, fd, "PUT");
+};
+
+/** @deprecated Usar crearAnuncioConImagen */
+export const crearAnuncio = (data) => request("/anuncios", { method: "POST", body: data });
+/** @deprecated Usar actualizarAnuncioConImagen */
+export const actualizarAnuncio = (id, data) => request(`/anuncios/${id}`, { method: "PUT", body: data });
+export const eliminarAnuncio = (id) => request(`/anuncios/${id}`, { method: "DELETE" });
+
+// ─── Calendario ───────────────────────────────────────────────────────────────
+export const getCalendario = (filtros = {}) => {
+  const params = new URLSearchParams(
+    Object.fromEntries(Object.entries(filtros).filter(([, v]) => v !== "" && v !== null && v !== undefined))
+  ).toString();
+  return request(`/calendario${params ? "?" + params : ""}`);
+};
+
+// ─── Incidencias extendidas ───────────────────────────────────────────────────
+export const preAprobarIncidencia = (id, comentario = "") =>
+  request(`/incidencias/${id}/pre-aprobar`, { method: "PUT", body: { comentario } });
+
+// ─── Usuarios extendidos ──────────────────────────────────────────────────────
+export const descargarPlantillaImportacion = async () => {
+  const token = getToken();
+  const headers = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${BASE_URL}/usuarios/plantilla-importacion`, { headers });
+  if (!res.ok) throw new Error("Error al descargar plantilla");
+  return res.blob();
+};
+
+export const importarUsuarios = (csvFile) => {
+  const fd = new FormData();
+  fd.append("archivo", csvFile);
+  return requestMultipart("/usuarios/importar", fd, "POST");
+};
+
+// ─── Personal de hoy (sidebar) ────────────────────────────────────────────────
+export const getPersonalHoy = () => request("/registros/personal-hoy");
+
+// ─── Vacaciones (endpoint dedicado) ───────────────────────────────────────────
+export const getVacaciones = (filtros = {}) => {
+  const params = new URLSearchParams(
+    Object.fromEntries(Object.entries(filtros).filter(([, v]) => v !== "" && v !== null && v !== undefined))
+  ).toString();
+  return request(`/vacaciones${params ? "?" + params : ""}`);
+};
+
+export const solicitarVacaciones = (formData) => requestMultipart("/vacaciones", formData);
+
+export const getElegibilidadVacaciones = (usuarioId) => {
+  const qs = usuarioId ? `?usuarioId=${usuarioId}` : "";
+  return request(`/vacaciones/elegibilidad${qs}`);
+};
+
+export const preAprobarVacacion = (id, comentario = "") =>
+  request(`/vacaciones/${id}/pre-aprobar`, { method: "PUT", body: { comentario } });
+
+export const aprobarVacacion = (id, comentario = "") =>
+  request(`/vacaciones/${id}/aprobar`, { method: "PUT", body: { comentario } });
+
+export const rechazarVacacion = (id, comentario = "") =>
+  request(`/vacaciones/${id}/rechazar`, { method: "PUT", body: { comentario } });
+
+// ─── Áreas organizacionales ───────────────────────────────────────────────────
+export const getAreas = () => request("/areas");
+export const getAreasAdmin = () => request("/areas/all");
+export const crearArea = (data) => request("/areas", { method: "POST", body: data });
+export const actualizarArea = (id, data) => request(`/areas/${id}`, { method: "PUT", body: data });
+export const eliminarArea = (id) => request(`/areas/${id}`, { method: "DELETE" });
+
+// ─── 2FA (TOTP) ───────────────────────────────────────────────────────────────
+export const get2FAStatus = () => request("/auth/2fa/status");
+
+export const setup2FA = () => request("/auth/2fa/setup", { method: "POST" });
+
+export const confirm2FA = (code) =>
+  request("/auth/2fa/confirm", { method: "POST", body: { code } });
+
+export const disable2FA = (code) =>
+  request("/auth/2fa/disable", { method: "POST", body: { code } });
+
+export const verifyLogin2FA = async (challengeId, code) => {
+  const data = await request("/auth/2fa/verify-login", { method: "POST", body: { challengeId, code } });
+  if (data.token) localStorage.setItem("token", data.token);
+  return data;
+};
+
+export const reset2FA = (id) => request(`/usuarios/${id}/2fa`, { method: "DELETE" });

@@ -136,6 +136,15 @@ const refreshFromDatabaseIfNeeded = async (force = false) => {
   return refreshInProgress;
 };
 
+// ─── Áreas (catálogo organizacional) ──────────────────────────────────────────
+let areas = [
+  { id: newId(), nombre: "Recursos Humanos",  descripcion: "Gestión de personal y nóminas", activo: true, creadoEn: new Date().toISOString() },
+  { id: newId(), nombre: "Tecnología",        descripcion: "Soporte TI y desarrollo de sistemas", activo: true, creadoEn: new Date().toISOString() },
+  { id: newId(), nombre: "Operaciones",       descripcion: "Operaciones y logística", activo: true, creadoEn: new Date().toISOString() },
+  { id: newId(), nombre: "Administración",    descripcion: "Administración general y finanzas", activo: true, creadoEn: new Date().toISOString() },
+  { id: newId(), nombre: "Ventas",            descripcion: "Área comercial y ventas", activo: true, creadoEn: new Date().toISOString() },
+];
+
 // ─── Puestos (catálogo dinámico) ──────────────────────────────────────────────
 // horarioId: horario por defecto que se hereda al crear un usuario con este puesto
 let puestos = [
@@ -195,6 +204,7 @@ let sucursales = [
     direccion: "Av. Juárez 100, Col. Centro",
     ciudad: "Ciudad de México",
     estado: "CDMX",
+    tipo: "sucursal",
     activa: true,
     geocerca: { latitud: 19.4326, longitud: -99.1332, radio: 200 },
     creadoEn: new Date().toISOString(),
@@ -205,6 +215,7 @@ let sucursales = [
     direccion: "Blvd. Manuel Ávila Camacho 200",
     ciudad: "Ciudad de México",
     estado: "CDMX",
+    tipo: "sucursal",
     activa: true,
     geocerca: { latitud: 19.4794, longitud: -99.2067, radio: 150 },
     creadoEn: new Date().toISOString(),
@@ -332,23 +343,53 @@ let usuarios = [
     activo: true,
     creadoEn: new Date().toISOString(),
   },
+  // ── Administrador General del sistema ─────────────────────────────────────
+  {
+    id: "jose-ramon-estrada-0000-administrador",
+    nombre: "José Ramón",
+    apellido: "Estrada Rendón",
+    email: "jose.estrada@previta.com.mx",
+    password: "Previta2026",
+    sexo: "masculino",
+    edad: null,
+    puestoId: null,
+    sucursalId: null,
+    rol: "administrador_general",
+    grupoId: null,
+    horarioId: null,
+    tipo: "corporativo",
+    activo: true,
+    creadoEn: new Date().toISOString(),
+  },
 ];
 
 // ─── Grupos ───────────────────────────────────────────────────────────────────
 let grupos = [];
 
 // ─── Tipos de Incidencia ──────────────────────────────────────────────────────
+// IDs fijos para tipos clave (deben coincidir con migration 003 seed)
+const ID_TIPO_VACACIONES      = "vac-0000-0000-0000-000000000001";
+const ID_TIPO_INCAPACIDAD     = "inc-0000-0000-0000-000000000001";
+const ID_TIPO_INCAP_MAT       = "inc-0000-0000-0000-000000000002";
+
 let tiposIncidencia = [
-  { id: newId(), nombre: "Enfermedad",                descripcion: "Baja por enfermedad con o sin certificado médico", requiereArchivo: true,  activo: true, creadoEn: new Date().toISOString() },
-  { id: newId(), nombre: "Permiso Personal",          descripcion: "Ausencia justificada por motivos personales",       requiereArchivo: false, activo: true, creadoEn: new Date().toISOString() },
-  { id: newId(), nombre: "Ausencia Sin Goce de Sueldo", descripcion: "Falta injustificada sin pago",                   requiereArchivo: false, activo: true, creadoEn: new Date().toISOString() },
-  { id: newId(), nombre: "Maternidad/Paternidad",    descripcion: "Licencia de maternidad o paternidad",               requiereArchivo: true,  activo: true, creadoEn: new Date().toISOString() },
-  { id: newId(), nombre: "Duelo",                     descripcion: "Permiso por fallecimiento de familiar",             requiereArchivo: false, activo: true, creadoEn: new Date().toISOString() },
-  { id: newId(), nombre: "Retardo Justificado",       descripcion: "Llegada tarde con justificación",                  requiereArchivo: false, activo: true, creadoEn: new Date().toISOString() },
+  // Tipos con categoriaBloqueo (bloquean el registro de asistencia cuando están aprobados)
+  { id: ID_TIPO_VACACIONES,  nombre: "Vacaciones",                  descripcion: "Período vacacional conforme a la Ley Federal del Trabajo. Solo disponible con 1+ año de antigüedad.", requiereArchivo: false, categoriaBloqueo: "vacaciones",  activo: true, creadoEn: new Date().toISOString() },
+  { id: ID_TIPO_INCAPACIDAD, nombre: "Incapacidad Médica",          descripcion: "Ausencia por incapacidad médica con constancia del IMSS o médico particular.",                        requiereArchivo: true,  categoriaBloqueo: "incapacidad",  activo: true, creadoEn: new Date().toISOString() },
+  { id: ID_TIPO_INCAP_MAT,   nombre: "Incapacidad Maternidad/Paternidad", descripcion: "Licencia de maternidad (84 días) o paternidad (5 días) conforme a la ley.",                    requiereArchivo: true,  categoriaBloqueo: "incapacidad",  activo: true, creadoEn: new Date().toISOString() },
+  // Tipos sin bloqueo
+  { id: newId(), nombre: "Enfermedad",                descripcion: "Baja por enfermedad con o sin certificado médico", requiereArchivo: true,  categoriaBloqueo: null, activo: true, creadoEn: new Date().toISOString() },
+  { id: newId(), nombre: "Permiso Personal",          descripcion: "Ausencia justificada por motivos personales",       requiereArchivo: false, categoriaBloqueo: null, activo: true, creadoEn: new Date().toISOString() },
+  { id: newId(), nombre: "Ausencia Sin Goce de Sueldo", descripcion: "Falta injustificada sin pago",                   requiereArchivo: false, categoriaBloqueo: null, activo: true, creadoEn: new Date().toISOString() },
+  { id: newId(), nombre: "Duelo",                     descripcion: "Permiso por fallecimiento de familiar",             requiereArchivo: false, categoriaBloqueo: null, activo: true, creadoEn: new Date().toISOString() },
+  { id: newId(), nombre: "Retardo Justificado",       descripcion: "Llegada tarde con justificación",                  requiereArchivo: false, categoriaBloqueo: null, activo: true, creadoEn: new Date().toISOString() },
 ];
 
 // ─── Incidencias ──────────────────────────────────────────────────────────────
 let incidencias = [];
+
+// ─── Anuncios del panel lateral ────────────────────────────────────────────────
+let anuncios = [];
 
 // ─── Aclaraciones de horario ───────────────────────────────────────────────────
 let aclaraciones = [];
@@ -371,17 +412,23 @@ const MODULOS_SISTEMA = [
   { key: "auditoria",      label: "Auditoría" },
   { key: "logs",           label: "Logs / Salud de Plataforma" },
   { key: "notificaciones", label: "Notificaciones" },
+  { key: "vacaciones",     label: "Vacaciones" },
+  { key: "incapacidades",  label: "Incapacidades" },
+  { key: "calendario",     label: "Calendario" },
+  { key: "organigrama",    label: "Organigrama" },
+  { key: "horarios",       label: "Horarios" },
 ];
 
 // Mapa rol → módulos permitidos (configurable desde el panel de Admin)
 let configuracionRoles = {
-  super_admin:                 ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","auditoria","logs","notificaciones"],
-  agente_soporte_ti:           ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","logs","notificaciones"],
-  supervisor_sucursales:       ["dashboard","eventos","incidencias","reportes","empleados","grupos","mapa","notificaciones"],
-  agente_control_asistencia:   ["dashboard","eventos","incidencias","notificaciones"],
+  super_admin:                 ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","auditoria","logs","notificaciones","vacaciones","incapacidades","calendario","organigrama","horarios"],
+  agente_soporte_ti:           ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","logs","notificaciones","vacaciones","incapacidades","calendario","organigrama","horarios"],
+  supervisor_sucursales:       ["dashboard","eventos","incidencias","reportes","empleados","grupos","mapa","notificaciones","vacaciones","incapacidades","calendario","organigrama"],
+  agente_control_asistencia:   ["dashboard","eventos","incidencias","notificaciones","vacaciones","incapacidades","calendario"],
   visor_reportes:              ["dashboard","reportes","mapa","notificaciones"],
   medico_titular:              ["dashboard","incidencias","notificaciones"],
   medico_de_guardia:           ["dashboard","incidencias","notificaciones"],
+  nominas:                     ["dashboard","incidencias","empleados","reportes","notificaciones","vacaciones","incapacidades","horarios"],
 };
 
 const ROLE_DEFINITIONS = {
@@ -392,6 +439,7 @@ const ROLE_DEFINITIONS = {
   visor_reportes: "Visor de Reportes",
   medico_titular: "Medico Titular",
   medico_de_guardia: "Medico de Guardia",
+  nominas: "Nóminas",
 };
 
 // ─── Registros de acceso ──────────────────────────────────────────────────────
@@ -568,6 +616,38 @@ const updateEmpresaConfig = (data) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// API del store — Áreas
+// ─────────────────────────────────────────────────────────────────────────────
+
+const getAreas = (soloActivos = true) =>
+  soloActivos ? areas.filter((a) => a.activo) : areas;
+
+const getAreaById = (id) => areas.find((a) => a.id === id) || null;
+
+const createArea = (data) => {
+  const nuevo = { id: newId(), activo: true, creadoEn: new Date().toISOString(), ...data };
+  areas.push(nuevo);
+  scheduleDatabaseSync();
+  return nuevo;
+};
+
+const updateArea = (id, data) => {
+  const idx = areas.findIndex((a) => a.id === id);
+  if (idx === -1) return null;
+  areas[idx] = { ...areas[idx], ...data };
+  scheduleDatabaseSync();
+  return areas[idx];
+};
+
+const deleteArea = (id) => {
+  const idx = areas.findIndex((a) => a.id === id);
+  if (idx === -1) return false;
+  areas[idx].activo = false;
+  scheduleDatabaseSync();
+  return true;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // API del store — Puestos
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -675,6 +755,7 @@ const getUsuarios = (filtros = {}) => {
   if (filtros.grupoId) resultado = resultado.filter((u) => u.grupoId === filtros.grupoId);
   if (filtros.activo !== undefined) resultado = resultado.filter((u) => u.activo === filtros.activo);
   if (filtros.tipo) resultado = resultado.filter((u) => u.tipo === filtros.tipo);
+  if (filtros.horarioId) resultado = resultado.filter((u) => u.horarioId === filtros.horarioId);
   return resultado;
 };
 
@@ -686,6 +767,14 @@ const createUsuario = (data) => {
     id: newId(),
     grupoId: null,
     horarioId: null,
+    jefeInmediatoId: null,
+    area: null,
+    fechaNacimiento: null,
+    fechaInicioActividades: null,
+    usaHorarioPuesto: false,
+    configDiasHorario: null,
+    totpSecret: null,
+    totpHabilitado: false,
     activo: true,
     creadoEn: new Date().toISOString(),
     ...data,
@@ -843,6 +932,10 @@ const createIncidencia = (data) => {
   const nueva = {
     id: newId(),
     estado: "pendiente",
+    fechaIncidencia: new Date().toISOString().split("T")[0],
+    fechaFin: null,
+    preAprobaciones: [],
+    jefeInmediatoId: null,
     supervisorId: null,
     comentarioSupervisor: null,
     revisadoEn: null,
@@ -857,12 +950,127 @@ const createIncidencia = (data) => {
   return nueva;
 };
 
+/**
+ * Pre-aprueba una incidencia (agente_control_asistencia).
+ * Agrega un registro al historial de pre-aprobaciones y cambia estado a pre_aprobada.
+ */
+const preAprobarIncidencia = (id, preAprobadoPorId, comentario = "") => {
+  const idx = incidencias.findIndex((i) => i.id === id);
+  if (idx === -1) return null;
+  const entrada = {
+    preAprobadoPorId,
+    preAprobadoEn: new Date().toISOString(),
+    comentario,
+  };
+  const preAprobaciones = Array.isArray(incidencias[idx].preAprobaciones)
+    ? [...incidencias[idx].preAprobaciones, entrada]
+    : [entrada];
+  incidencias[idx] = { ...incidencias[idx], estado: "pre_aprobada", preAprobaciones };
+  scheduleDatabaseSync();
+  return incidencias[idx];
+};
+
+/**
+ * Devuelve las incidencias APROBADAS de un usuario que cubren una fecha dada.
+ * Una incidencia cubre una fecha si:
+ *   - fechaFin es null y fechaIncidencia === fecha, O
+ *   - fechaFin != null y fechaIncidencia <= fecha <= fechaFin
+ */
+const getIncidenciasActivasParaUsuario = (usuarioId, fecha) => {
+  return incidencias.filter((inc) => {
+    if (inc.usuarioId !== usuarioId) return false;
+    if (inc.estado !== "aprobada") return false;
+    if (!inc.fechaIncidencia) return false;
+    if (!inc.fechaFin) return inc.fechaIncidencia === fecha;
+    return inc.fechaIncidencia <= fecha && fecha <= inc.fechaFin;
+  });
+};
+
+/**
+ * Devuelve todos los usuarios activos cuyo rol esté en el array proporcionado.
+ * Útil para notificar a todos los administradores de un tipo en particular.
+ */
+const getSupervisoresPorRoles = (roles) =>
+  usuarios.filter((u) => u.activo && roles.includes(u.rol));
+
 const updateIncidencia = (id, data) => {
   const idx = incidencias.findIndex((i) => i.id === id);
   if (idx === -1) return null;
   incidencias[idx] = { ...incidencias[idx], ...data };
   scheduleDatabaseSync();
   return incidencias[idx];
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API del store — Anuncios del panel lateral
+// ─────────────────────────────────────────────────────────────────────────────
+
+const getAnuncios = ({ all = false, usuarioId = null, grupoId = null, userArea = null } = {}) => {
+  const hoy = new Date().toISOString().split("T")[0];
+  const lista = [...anuncios].sort((a, b) => new Date(b.creadoEn) - new Date(a.creadoEn));
+  if (all) return lista; // para la vista de administración
+
+  // Vista pública: activos, no vencidos y cuya fecha de inicio ya pasó
+  const visibles = lista.filter((a) =>
+    a.activo &&
+    (!a.fechaExpiracion || a.fechaExpiracion >= hoy) &&
+    (!a.fechaInicio     || a.fechaInicio     <= hoy)
+  );
+
+  // Sin contexto de usuario → devolver todos los visibles (sidebar sin sesión)
+  if (!usuarioId && !grupoId && !userArea) return visibles;
+
+  return visibles.filter((a) => {
+    const dest = a.destinatarios;
+    // Sin restricción de destinatarios → visible para todos
+    if (!dest || dest.todos === true || Object.keys(dest).length === 0) return true;
+    // Por usuario específico
+    if (usuarioId && Array.isArray(dest.usuarios) && dest.usuarios.includes(usuarioId)) return true;
+    // Por grupo
+    if (grupoId && Array.isArray(dest.grupos) && dest.grupos.includes(grupoId)) return true;
+    // Por área: los IDs de área se resuelven a nombres para comparar con el campo area del usuario
+    if (userArea && Array.isArray(dest.areas) && dest.areas.length > 0) {
+      const nombresArea = dest.areas
+        .map((aId) => { const ar = areas.find((x) => x.id === aId); return ar ? ar.nombre : null; })
+        .filter(Boolean);
+      if (nombresArea.some((n) => n.toLowerCase() === userArea.toLowerCase())) return true;
+    }
+    return false;
+  });
+};
+
+const getAnuncioById = (id) => anuncios.find((a) => a.id === id) || null;
+
+const createAnuncio = (data) => {
+  // Por defecto vence en 7 días si no se especifica
+  const defaultExpiracion = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    .toISOString().split("T")[0];
+  const nuevo = {
+    id: newId(),
+    activo: true,
+    fechaExpiracion: defaultExpiracion,
+    creadoEn: new Date().toISOString(),
+    ...data,
+  };
+  anuncios.push(nuevo);
+  scheduleDatabaseSync();
+  return nuevo;
+};
+
+const updateAnuncio = (id, data) => {
+  const idx = anuncios.findIndex((a) => a.id === id);
+  if (idx === -1) return null;
+  anuncios[idx] = { ...anuncios[idx], ...data };
+  scheduleDatabaseSync();
+  return anuncios[idx];
+};
+
+const deleteAnuncio = (id) => {
+  const idx = anuncios.findIndex((a) => a.id === id);
+  if (idx === -1) return false;
+  anuncios[idx].activo = false;
+  scheduleDatabaseSync();
+  return true;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -975,8 +1183,12 @@ const createRegistro = (data) => {
     estadoAprobacion: null,
     aprobadoPor: null,
     aprobadoEn: null,
+    horaModificada: null,
+    fotoUrl: null,
     creadoEn: new Date().toISOString(),
     ...data,
+    // horaOriginal es inmutable: siempre refleja la hora real del primer registro
+    horaOriginal: data.horaOriginal || data.hora || null,
   };
   registros.push(nuevo);
   scheduleDatabaseSync();
@@ -1061,6 +1273,16 @@ const initializeFromDatabase = async () => {
     databaseState.connected = true;
     databaseState.lastError = null;
     databaseState.tables = await getExistingTables();
+    // Migraciones de columnas nuevas (idempotentes)
+    if (hasTable("registros")) {
+      const [cols] = await pool.query(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'registros' AND COLUMN_NAME = 'foto_url'`
+      );
+      if (cols.length === 0) {
+        await pool.query(`ALTER TABLE registros ADD COLUMN foto_url VARCHAR(500) NULL`);
+      }
+    }
     await loadDatabaseSnapshot();
     await persistDatabaseSnapshot();
     databaseState.lastSyncAt = new Date().toISOString();
@@ -1169,8 +1391,21 @@ const loadDatabaseSnapshot = async () => {
   }
 
   if (hasTable("puestos")) {
+    // area_id column may not exist in older schemas (added in migration 007)
+    let tieneColumnaAreaId = false;
+    try {
+      const [cols] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'puestos' AND COLUMN_NAME = 'area_id'`
+      );
+      tieneColumnaAreaId = cols.length > 0;
+    } catch { /* ignorar */ }
+
+    const areaIdExpr = tieneColumnaAreaId ? "area_id AS areaId," : "NULL AS areaId,";
     const [puestosRows] = await pool.query(
-      `SELECT id, nombre, descripcion, horario_id AS horarioId, activo, created_at AS creadoEn
+      `SELECT id, nombre, descripcion, horario_id AS horarioId,
+              ${areaIdExpr}
+              activo, created_at AS creadoEn
        FROM puestos`
     );
     const camposPorPuesto = {};
@@ -1204,10 +1439,36 @@ const loadDatabaseSnapshot = async () => {
     }
   }
 
+  if (hasTable("areas")) {
+    const [areasRows] = await pool.query(
+      `SELECT id, nombre, descripcion, activo, created_at AS creadoEn FROM areas`
+    );
+    if (areasRows.length > 0) {
+      areas = areasRows.map((row) => ({
+        ...row,
+        activo: toBool(row.activo, true),
+        creadoEn: toIsoString(row.creadoEn, new Date().toISOString()),
+      }));
+    }
+  }
+
   if (hasTable("sucursales")) {
+    // Determine if 'tipo' column exists (added in migration 006)
+    let tieneColumnaTipo = false;
+    try {
+      const [cols] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sucursales' AND COLUMN_NAME = 'tipo'`
+      );
+      tieneColumnaTipo = cols.length > 0;
+    } catch { /* ignorar */ }
+
+    const tipoExpr = tieneColumnaTipo ? "COALESCE(tipo, 'sucursal') AS tipo," : "'sucursal' AS tipo,";
+
     const [rows] = await pool.query(
       `SELECT id, nombre, direccion, ciudad, estado, latitud, longitud,
-              radio_metros AS radio, activa, created_at AS creadoEn
+              radio_metros AS radio, activa, ${tipoExpr}
+              created_at AS creadoEn
        FROM sucursales`
     );
     if (rows.length > 0) {
@@ -1217,6 +1478,7 @@ const loadDatabaseSnapshot = async () => {
         direccion: row.direccion || "",
         ciudad: row.ciudad || "",
         estado: row.estado || "",
+        tipo: row.tipo || "sucursal",
         activa: toBool(row.activa, true),
         geocerca: {
           latitud: Number(row.latitud),
@@ -1233,7 +1495,13 @@ const loadDatabaseSnapshot = async () => {
       `SELECT id, nombre, apellido, email, password_hash AS password, sexo, edad, telefono,
               rol_clave AS rol, tipo_usuario AS tipo, departamento, datos_extra_json AS datosExtra,
               puesto_id AS puestoId, sucursal_id AS sucursalId, horario_id AS horarioId,
-              grupo_id AS grupoId, foto_url AS fotoUrl, activo, created_at AS creadoEn
+              grupo_id AS grupoId, jefe_inmediato_id AS jefeInmediatoId, area,
+              fecha_nacimiento AS fechaNacimiento,
+              fecha_inicio_actividades AS fechaInicioActividades,
+              usa_horario_puesto AS usaHorarioPuesto,
+              totp_secret AS totpSecret,
+              totp_habilitado AS totpHabilitado,
+              foto_url AS fotoUrl, activo, created_at AS creadoEn
        FROM usuarios`
     );
     if (rows.length > 0) {
@@ -1242,6 +1510,14 @@ const loadDatabaseSnapshot = async () => {
         edad: Number(row.edad || 0),
         activo: toBool(row.activo, true),
         datosExtra: parseJson(row.datosExtra, null),
+        usaHorarioPuesto: toBool(row.usaHorarioPuesto, false),
+        totpHabilitado: toBool(row.totpHabilitado, false),
+        fechaNacimiento: row.fechaNacimiento
+          ? (typeof row.fechaNacimiento === "string" ? row.fechaNacimiento : row.fechaNacimiento.toISOString().split("T")[0])
+          : null,
+        fechaInicioActividades: row.fechaInicioActividades
+          ? (typeof row.fechaInicioActividades === "string" ? row.fechaInicioActividades : row.fechaInicioActividades.toISOString().split("T")[0])
+          : null,
         creadoEn: toIsoString(row.creadoEn, new Date().toISOString()),
       }));
     }
@@ -1276,7 +1552,9 @@ const loadDatabaseSnapshot = async () => {
 
   if (hasTable("tipos_incidencia")) {
     const [rows] = await pool.query(
-      `SELECT id, nombre, descripcion, requiere_archivo AS requiereArchivo, activo, created_at AS creadoEn
+      `SELECT id, nombre, descripcion, requiere_archivo AS requiereArchivo,
+              categoria_bloqueo AS categoriaBloqueo,
+              activo, created_at AS creadoEn
        FROM tipos_incidencia`
     );
     if (rows.length > 0) {
@@ -1284,6 +1562,7 @@ const loadDatabaseSnapshot = async () => {
         ...row,
         requiereArchivo: toBool(row.requiereArchivo),
         activo: toBool(row.activo, true),
+        categoriaBloqueo: row.categoriaBloqueo || null,
         creadoEn: toIsoString(row.creadoEn, new Date().toISOString()),
       }));
     }
@@ -1292,7 +1571,11 @@ const loadDatabaseSnapshot = async () => {
   if (hasTable("incidencias")) {
     const [rows] = await pool.query(
       `SELECT id, usuario_id AS usuarioId, sucursal_id AS sucursalId, tipo_incidencia_id AS tipoIncidenciaId,
-              descripcion, estado, supervisor_id AS supervisorId,
+              descripcion, estado,
+              fecha_incidencia AS fechaIncidencia, fecha_fin AS fechaFin,
+              pre_aprobaciones_json AS preAprobacionesJson,
+              jefe_inmediato_id AS jefeInmediatoId,
+              supervisor_id AS supervisorId,
               comentario_supervisor AS comentarioSupervisor, revisado_en AS revisadoEn,
               archivo_url AS archivoUrl, archivo_nombre AS archivoNombre,
               archivo_mime AS archivoMime, created_at AS creadoEn
@@ -1301,8 +1584,58 @@ const loadDatabaseSnapshot = async () => {
     if (rows.length > 0) {
       incidencias = rows.map((row) => ({
         ...row,
+        preAprobaciones: parseJson(row.preAprobacionesJson, []),
+        preAprobacionesJson: undefined,
+        fechaIncidencia: row.fechaIncidencia || null,
+        fechaFin: row.fechaFin || null,
+        jefeInmediatoId: row.jefeInmediatoId || null,
         creadoEn: toIsoString(row.creadoEn, new Date().toISOString()),
         revisadoEn: toIsoString(row.revisadoEn),
+      }));
+    }
+  }
+
+  if (hasTable("anuncios")) {
+    // Verificar columnas opcionales (añadidas en migration 009)
+    let tieneDestinatariosJson = false;
+    let tieneFechaInicio       = false;
+    let tieneFechaExpiracion   = false;
+    try {
+      const [cols] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'anuncios'
+           AND COLUMN_NAME IN ('destinatarios_json','fecha_inicio','fecha_expiracion')`
+      );
+      const nombres = cols.map((c) => c.COLUMN_NAME);
+      tieneDestinatariosJson = nombres.includes("destinatarios_json");
+      tieneFechaInicio       = nombres.includes("fecha_inicio");
+      tieneFechaExpiracion   = nombres.includes("fecha_expiracion");
+    } catch { /* ignorar */ }
+
+    const extras = [
+      tieneDestinatariosJson ? "destinatarios_json AS destinatariosJson" : "NULL AS destinatariosJson",
+      tieneFechaInicio       ? "fecha_inicio AS fechaInicio"             : "NULL AS fechaInicio",
+      tieneFechaExpiracion   ? "fecha_expiracion AS fechaExpiracion"     : "NULL AS fechaExpiracion",
+    ].join(", ");
+
+    const [rows] = await pool.query(
+      `SELECT id, titulo, texto, activo, creado_por AS creadoPor, created_at AS creadoEn,
+              ${extras}
+       FROM anuncios
+       WHERE activo = 1
+       ORDER BY created_at DESC`
+    );
+    if (rows.length > 0) {
+      anuncios = rows.map((row) => ({
+        ...row,
+        activo:       toBool(row.activo, true),
+        creadoEn:     toIsoString(row.creadoEn, new Date().toISOString()),
+        destinatarios: row.destinatariosJson
+          ? (typeof row.destinatariosJson === "string"
+              ? JSON.parse(row.destinatariosJson)
+              : row.destinatariosJson)
+          : null,
+        destinatariosJson: undefined,
       }));
     }
   }
@@ -1343,6 +1676,7 @@ const loadDatabaseSnapshot = async () => {
   if (hasTable("registros")) {
     const [rows] = await pool.query(
       `SELECT id, usuario_id AS usuarioId, sucursal_id AS sucursalId, tipo, fecha, hora,
+              hora_original AS horaOriginal, hora_modificada AS horaModificada,
               latitud, longitud, dentro_geocerca AS dentroGeocerca, distancia_al_centro AS distanciaAlCentro,
               es_manual AS esManual, justificacion,
               fuera_de_horario AS fueraDeHorario, motivo_fuera_horario AS motivoFueraHorario,
@@ -1351,6 +1685,7 @@ const loadDatabaseSnapshot = async () => {
               comentario_supervisor AS comentarioSupervisor, editado_manual AS editadoManual,
               editado_por AS editadoPor, editado_en AS editadoEn,
               motivo_edicion_manual AS motivoEdicionManual, manual_original_json AS manualOriginal,
+              foto_url AS fotoUrl,
               created_at AS creadoEn
        FROM registros`
     );
@@ -1384,12 +1719,23 @@ const loadDatabaseSnapshot = async () => {
       [MAX_AUDIT_LOG]
     );
     if (rows.length > 0) {
-      auditLog = rows.map((row) => ({
-        ...row,
-        exito: toBool(row.exito, true),
-        detalles: parseJson(row.detalles, null),
-        timestamp: toIsoString(row.timestamp, new Date().toISOString()),
-      }));
+      auditLog = rows.map((row) => {
+        const detallesRaw = parseJson(row.detalles, null);
+        // Extraer objetivo guardado en detalles_json sin afectar los detalles normales
+        const objetivo = detallesRaw?._objetivo || {};
+        const detallesSinObjetivo = detallesRaw
+          ? Object.fromEntries(Object.entries(detallesRaw).filter(([k]) => k !== "_objetivo"))
+          : null;
+        return {
+          ...row,
+          exito: toBool(row.exito, true),
+          detalles: detallesSinObjetivo && Object.keys(detallesSinObjetivo).length > 0 ? detallesSinObjetivo : null,
+          objetivoId:     objetivo.id   || null,
+          objetivoNombre: objetivo.nombre || null,
+          objetivoTipo:   objetivo.tipo  || null,
+          timestamp: toIsoString(row.timestamp, new Date().toISOString()),
+        };
+      });
     }
   }
 };
@@ -1490,21 +1836,42 @@ const persistDatabaseSnapshot = async () => {
 
     if (hasTable("puesto_campos_extra")) await connection.query("DELETE FROM puesto_campos_extra");
     if (hasTable("puestos")) {
+      // Detect if area_id column exists (migration 007)
+      let puestosConAreaId = false;
+      try {
+        const [cols] = await connection.query(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'puestos' AND COLUMN_NAME = 'area_id'`
+        );
+        puestosConAreaId = cols.length > 0;
+      } catch { /* ignorar */ }
+
       await connection.query("DELETE FROM puestos");
       for (const puesto of puestos) {
-        await connection.query(
-          `INSERT INTO puestos
-            (id, nombre, descripcion, horario_id, activo, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-          [
-            puesto.id,
-            puesto.nombre,
-            puesto.descripcion || "",
-            puesto.horarioId || null,
-            puesto.activo ? 1 : 0,
-            toMySqlDateTime(puesto.creadoEn, toMySqlDateTime(new Date())),
-          ]
-        );
+        if (puestosConAreaId) {
+          await connection.query(
+            `INSERT INTO puestos
+              (id, nombre, descripcion, horario_id, area_id, activo, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              puesto.id, puesto.nombre, puesto.descripcion || "",
+              puesto.horarioId || null, puesto.areaId || null,
+              puesto.activo ? 1 : 0,
+              toMySqlDateTime(puesto.creadoEn, toMySqlDateTime(new Date())),
+            ]
+          );
+        } else {
+          await connection.query(
+            `INSERT INTO puestos
+              (id, nombre, descripcion, horario_id, activo, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              puesto.id, puesto.nombre, puesto.descripcion || "",
+              puesto.horarioId || null, puesto.activo ? 1 : 0,
+              toMySqlDateTime(puesto.creadoEn, toMySqlDateTime(new Date())),
+            ]
+          );
+        }
 
         if (hasTable("puesto_campos_extra")) {
           for (let index = 0; index < (puesto.camposExtra || []).length; index += 1) {
@@ -1529,26 +1896,68 @@ const persistDatabaseSnapshot = async () => {
       }
     }
 
-    if (hasTable("sucursales")) {
-      await connection.query("DELETE FROM sucursales");
-      for (const sucursal of sucursales) {
+    if (hasTable("areas")) {
+      await connection.query("DELETE FROM areas");
+      for (const area of areas) {
         await connection.query(
-          `INSERT INTO sucursales
-            (id, nombre, direccion, ciudad, estado, latitud, longitud, radio_metros, activa, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          `INSERT INTO areas (id, nombre, descripcion, activo, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, NOW())`,
           [
-            sucursal.id,
-            sucursal.nombre,
-            sucursal.direccion || "",
-            sucursal.ciudad || "",
-            sucursal.estado || "",
-            Number(sucursal.geocerca?.latitud || 0),
-            Number(sucursal.geocerca?.longitud || 0),
-            Number(sucursal.geocerca?.radio || 0),
-            sucursal.activa ? 1 : 0,
-            toMySqlDateTime(sucursal.creadoEn, toMySqlDateTime(new Date())),
+            area.id,
+            area.nombre,
+            area.descripcion || "",
+            area.activo ? 1 : 0,
+            toMySqlDateTime(area.creadoEn, toMySqlDateTime(new Date())),
           ]
         );
+      }
+    }
+
+    if (hasTable("sucursales")) {
+      // Detect if tipo column exists (migration 006)
+      let sucursalesConTipo = false;
+      try {
+        const [cols] = await connection.query(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sucursales' AND COLUMN_NAME = 'tipo'`
+        );
+        sucursalesConTipo = cols.length > 0;
+      } catch { /* ignorar */ }
+
+      await connection.query("DELETE FROM sucursales");
+      for (const sucursal of sucursales) {
+        if (sucursalesConTipo) {
+          await connection.query(
+            `INSERT INTO sucursales
+              (id, nombre, direccion, ciudad, estado, latitud, longitud, radio_metros, activa, tipo, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              sucursal.id, sucursal.nombre, sucursal.direccion || "",
+              sucursal.ciudad || "", sucursal.estado || "",
+              Number(sucursal.geocerca?.latitud || 0),
+              Number(sucursal.geocerca?.longitud || 0),
+              Number(sucursal.geocerca?.radio || 0),
+              sucursal.activa ? 1 : 0,
+              sucursal.tipo || "sucursal",
+              toMySqlDateTime(sucursal.creadoEn, toMySqlDateTime(new Date())),
+            ]
+          );
+        } else {
+          await connection.query(
+            `INSERT INTO sucursales
+              (id, nombre, direccion, ciudad, estado, latitud, longitud, radio_metros, activa, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              sucursal.id, sucursal.nombre, sucursal.direccion || "",
+              sucursal.ciudad || "", sucursal.estado || "",
+              Number(sucursal.geocerca?.latitud || 0),
+              Number(sucursal.geocerca?.longitud || 0),
+              Number(sucursal.geocerca?.radio || 0),
+              sucursal.activa ? 1 : 0,
+              toMySqlDateTime(sucursal.creadoEn, toMySqlDateTime(new Date())),
+            ]
+          );
+        }
       }
     }
 
@@ -1583,12 +1992,18 @@ const persistDatabaseSnapshot = async () => {
     if (hasTable("usuarios")) {
       await connection.query("DELETE FROM usuarios");
       for (const usuario of usuarios) {
+        // Detectar si la tabla ya tiene los campos nuevos (migration 003)
+        const hasNuevosCampos = databaseState.tables.has("usuarios");
         await connection.query(
           `INSERT INTO usuarios
             (id, nombre, apellido, email, password_hash, sexo, edad, telefono,
              rol_clave, tipo_usuario, departamento, datos_extra_json,
-             puesto_id, sucursal_id, horario_id, grupo_id, foto_url, activo, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+             puesto_id, sucursal_id, horario_id, grupo_id,
+             jefe_inmediato_id, area,
+             fecha_nacimiento, fecha_inicio_actividades, usa_horario_puesto,
+             totp_secret, totp_habilitado,
+             foto_url, activo, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             usuario.id,
             usuario.nombre,
@@ -1606,11 +2021,40 @@ const persistDatabaseSnapshot = async () => {
             usuario.sucursalId || null,
             usuario.horarioId || null,
             usuario.grupoId || null,
+            usuario.jefeInmediatoId || null,
+            usuario.area || null,
+            usuario.fechaNacimiento || null,
+            usuario.fechaInicioActividades || null,
+            usuario.usaHorarioPuesto ? 1 : 0,
+            usuario.totpSecret || null,
+            usuario.totpHabilitado ? 1 : 0,
             usuario.fotoUrl || null,
             usuario.activo ? 1 : 0,
             toMySqlDateTime(usuario.creadoEn, toMySqlDateTime(new Date())),
           ]
-        );
+        ).catch(async () => {
+          // Fallback si migration 003 no se ha aplicado: insertar sin campos nuevos
+          await connection.query(
+            `INSERT IGNORE INTO usuarios
+              (id, nombre, apellido, email, password_hash, sexo, edad, telefono,
+               rol_clave, tipo_usuario, departamento, datos_extra_json,
+               puesto_id, sucursal_id, horario_id, grupo_id,
+               jefe_inmediato_id, area,
+               foto_url, activo, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              usuario.id, usuario.nombre, usuario.apellido || "", usuario.email,
+              usuario.password, usuario.sexo, Number(usuario.edad || 0), usuario.telefono || null,
+              usuario.rol, usuario.tipo || "sucursal", usuario.departamento || null,
+              usuario.datosExtra ? JSON.stringify(usuario.datosExtra) : null,
+              usuario.puestoId || null, usuario.sucursalId || null,
+              usuario.horarioId || null, usuario.grupoId || null,
+              usuario.jefeInmediatoId || null, usuario.area || null,
+              usuario.fotoUrl || null, usuario.activo ? 1 : 0,
+              toMySqlDateTime(usuario.creadoEn, toMySqlDateTime(new Date())),
+            ]
+          );
+        });
       }
     }
 
@@ -1619,13 +2063,14 @@ const persistDatabaseSnapshot = async () => {
       for (const tipo of tiposIncidencia) {
         await connection.query(
           `INSERT INTO tipos_incidencia
-            (id, nombre, descripcion, requiere_archivo, activo, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+            (id, nombre, descripcion, requiere_archivo, categoria_bloqueo, activo, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             tipo.id,
             tipo.nombre,
             tipo.descripcion || "",
             tipo.requiereArchivo ? 1 : 0,
+            tipo.categoriaBloqueo || null,
             tipo.activo ? 1 : 0,
             toMySqlDateTime(tipo.creadoEn, toMySqlDateTime(new Date())),
           ]
@@ -1638,9 +2083,11 @@ const persistDatabaseSnapshot = async () => {
       for (const incidencia of incidencias) {
         await connection.query(
           `INSERT INTO incidencias
-            (id, usuario_id, sucursal_id, tipo_incidencia_id, descripcion, estado, supervisor_id,
-             comentario_supervisor, revisado_en, archivo_url, archivo_nombre, archivo_mime, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            (id, usuario_id, sucursal_id, tipo_incidencia_id, descripcion, estado,
+             fecha_incidencia, fecha_fin, pre_aprobaciones_json, jefe_inmediato_id,
+             supervisor_id, comentario_supervisor, revisado_en,
+             archivo_url, archivo_nombre, archivo_mime, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             incidencia.id,
             incidencia.usuarioId,
@@ -1648,6 +2095,10 @@ const persistDatabaseSnapshot = async () => {
             incidencia.tipoIncidenciaId,
             incidencia.descripcion || null,
             incidencia.estado || "pendiente",
+            incidencia.fechaIncidencia || null,
+            incidencia.fechaFin || null,
+            incidencia.preAprobaciones?.length ? JSON.stringify(incidencia.preAprobaciones) : null,
+            incidencia.jefeInmediatoId || null,
             incidencia.supervisorId || null,
             incidencia.comentarioSupervisor || null,
             toMySqlDateTime(incidencia.revisadoEn),
@@ -1712,12 +2163,13 @@ const persistDatabaseSnapshot = async () => {
       for (const registro of registros) {
         await connection.query(
           `INSERT INTO registros
-            (id, usuario_id, sucursal_id, tipo, fecha, hora, latitud, longitud, dentro_geocerca,
+            (id, usuario_id, sucursal_id, tipo, fecha, hora, hora_original, hora_modificada,
+             latitud, longitud, dentro_geocerca,
              distancia_al_centro, es_manual, justificacion, fuera_de_horario, motivo_fuera_horario,
              captado_por, estado_aprobacion,
              aprobado_por, aprobado_en, comentario_supervisor, editado_manual, editado_por,
-             editado_en, motivo_edicion_manual, manual_original_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+             editado_en, motivo_edicion_manual, manual_original_json, foto_url, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             registro.id,
             registro.usuarioId,
@@ -1725,6 +2177,8 @@ const persistDatabaseSnapshot = async () => {
             registro.tipo,
             registro.fecha,
             registro.hora,
+            registro.horaOriginal || registro.hora || null,
+            registro.horaModificada || null,
             registro.latitud,
             registro.longitud,
             registro.dentroGeocerca === null ? null : (registro.dentroGeocerca ? 1 : 0),
@@ -1743,6 +2197,7 @@ const persistDatabaseSnapshot = async () => {
             toMySqlDateTime(registro.editadoEn),
             registro.motivoEdicionManual || null,
             registro.manualOriginal ? JSON.stringify(registro.manualOriginal) : null,
+            registro.fotoUrl || null,
             toMySqlDateTime(registro.creadoEn, toMySqlDateTime(new Date())),
           ]
         );
@@ -1768,9 +2223,69 @@ const persistDatabaseSnapshot = async () => {
             Number(evento.statusCode || 200),
             evento.exito ? 1 : 0,
             evento.ip || null,
-            evento.detalles ? JSON.stringify(evento.detalles) : null,
+            (() => {
+              // Persistir detalles + objetivo en el mismo campo JSON (sin cambio de schema)
+              const payload = {
+                ...(evento.detalles || {}),
+                ...(evento.objetivoId ? {
+                  _objetivo: { id: evento.objetivoId, nombre: evento.objetivoNombre || null, tipo: evento.objetivoTipo || null },
+                } : {}),
+              };
+              return Object.keys(payload).length > 0 ? JSON.stringify(payload) : null;
+            })(),
             toMySqlDateTime(evento.timestamp, toMySqlDateTime(new Date())),
           ]
+        );
+      }
+    }
+
+    if (hasTable("anuncios")) {
+      // Detectar columnas opcionales
+      let tieneDestinatariosJson = false;
+      let tieneFechaInicio       = false;
+      let tieneFechaExpiracion   = false;
+      try {
+        const [cols] = await connection.query(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'anuncios'
+             AND COLUMN_NAME IN ('destinatarios_json','fecha_inicio','fecha_expiracion')`
+        );
+        const nombres = cols.map((c) => c.COLUMN_NAME);
+        tieneDestinatariosJson = nombres.includes("destinatarios_json");
+        tieneFechaInicio       = nombres.includes("fecha_inicio");
+        tieneFechaExpiracion   = nombres.includes("fecha_expiracion");
+      } catch { /* ignorar */ }
+
+      await connection.query("DELETE FROM anuncios");
+      for (const anuncio of anuncios) {
+        const cols   = ["id", "titulo", "texto", "activo", "creado_por", "created_at", "updated_at"];
+        const values = [
+          anuncio.id,
+          anuncio.titulo,
+          anuncio.texto,
+          anuncio.activo ? 1 : 0,
+          anuncio.creadoPor || null,
+          toMySqlDateTime(anuncio.creadoEn, toMySqlDateTime(new Date())),
+          toMySqlDateTime(new Date()),
+        ];
+        if (tieneFechaInicio) {
+          cols.push("fecha_inicio");
+          values.push(anuncio.fechaInicio || null);
+        }
+        if (tieneFechaExpiracion) {
+          cols.push("fecha_expiracion");
+          values.push(anuncio.fechaExpiracion || null);
+        }
+        if (tieneDestinatariosJson) {
+          cols.push("destinatarios_json");
+          values.push(
+            anuncio.destinatarios ? JSON.stringify(anuncio.destinatarios) : null
+          );
+        }
+        const placeholders = cols.map(() => "?").join(", ");
+        await connection.query(
+          `INSERT INTO anuncios (${cols.join(", ")}) VALUES (${placeholders})`,
+          values
         );
       }
     }
@@ -1797,6 +2312,12 @@ module.exports = {
   initializeFromDatabase,
   refreshFromDatabaseIfNeeded,
   getDatabaseStatus,
+  // Áreas
+  getAreas,
+  getAreaById,
+  createArea,
+  updateArea,
+  deleteArea,
   // Puestos
   getPuestos,
   getPuestoById,
@@ -1823,6 +2344,7 @@ module.exports = {
   updateUsuario,
   deleteUsuario,
   getSupervisoresDeSucursal,
+  getSupervisoresPorRoles,
   // Configuración de roles
   MODULOS_SISTEMA,
   getConfiguracionRoles: () => ({ ...configuracionRoles }),
@@ -1861,6 +2383,14 @@ module.exports = {
   getIncidenciaById,
   createIncidencia,
   updateIncidencia,
+  preAprobarIncidencia,
+  getIncidenciasActivasParaUsuario,
+  // Anuncios
+  getAnuncios,
+  getAnuncioById,
+  createAnuncio,
+  updateAnuncio,
+  deleteAnuncio,
   // Aclaraciones
   getAclaraciones,
   getAclaracionById,
@@ -1887,4 +2417,8 @@ module.exports = {
   // Configuración de empresa
   getEmpresaConfig,
   updateEmpresaConfig,
+  // IDs fijos de tipos de incidencia
+  ID_TIPO_VACACIONES,
+  ID_TIPO_INCAPACIDAD,
+  ID_TIPO_INCAP_MAT,
 };

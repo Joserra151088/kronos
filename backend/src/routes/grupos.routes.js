@@ -105,8 +105,15 @@ router.put("/:id/sucursales", requireRoles(ROLES.SUPER_ADMIN, ROLES.SUPERVISOR_S
   return res.json(actualizado);
 });
 
-/** DELETE /api/grupos/:id — Desactivar grupo (super_admin) */
-router.delete("/:id", requireRoles(ROLES.SUPER_ADMIN), (req, res) => {
+/** DELETE /api/grupos/:id — Desactivar grupo (super_admin, agente_soporte_ti) */
+router.delete("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req, res) => {
+  // Validar que no haya usuarios asignados a este grupo
+  const usuariosAsignados = store.getUsuarios({ grupoId: req.params.id, activo: true });
+  if (usuariosAsignados.length > 0) {
+    return res.status(409).json({
+      error: `No se puede eliminar: hay ${usuariosAsignados.length} empleado(s) asignado(s) a este grupo.`,
+    });
+  }
   const ok = store.deleteGrupo(req.params.id);
   if (!ok) return res.status(404).json({ error: "Grupo no encontrado" });
   return res.json({ mensaje: "Grupo desactivado" });

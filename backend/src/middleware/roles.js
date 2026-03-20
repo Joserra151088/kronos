@@ -7,6 +7,7 @@
  */
 
 const ROLES = {
+  ADMINISTRADOR_GENERAL: "administrador_general", // Acceso total, gestiona licencias
   SUPER_ADMIN: "super_admin",
   AGENTE_SOPORTE_TI: "agente_soporte_ti",
   SUPERVISOR_SUCURSALES: "supervisor_sucursales",
@@ -14,13 +15,14 @@ const ROLES = {
   VISOR_REPORTES: "visor_reportes",
   MEDICO_TITULAR: "medico_titular",
   MEDICO_DE_GUARDIA: "medico_de_guardia",
+  NOMINAS: "nominas",
 };
 
 /** Todos los roles con acceso completo a la app (excepto solo-reportes y médicos) */
-const ROLES_ADMIN = [ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI];
+const ROLES_ADMIN = [ROLES.ADMINISTRADOR_GENERAL, ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI];
 
 /** Roles que pueden gestionar empleados y grupos */
-const ROLES_GESTION = [ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI, ROLES.SUPERVISOR_SUCURSALES];
+const ROLES_GESTION = [ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI, ROLES.SUPERVISOR_SUCURSALES, ROLES.NOMINAS];
 
 /** Roles con acceso a reportes */
 const ROLES_REPORTES = [

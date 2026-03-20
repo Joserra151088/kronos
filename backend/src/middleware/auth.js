@@ -9,7 +9,19 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 
-const JWT_SECRET = process.env.JWT_SECRET || "access_control_secret_2025";
+const _JWT_SECRET_ENV = process.env.JWT_SECRET;
+if (!_JWT_SECRET_ENV) {
+  if (process.env.NODE_ENV === "production") {
+    console.error("\n🚨 FATAL: JWT_SECRET no está configurado en .env. El servidor no puede iniciar en producción sin él.\n");
+    process.exit(1);
+  }
+  console.warn(
+    "\n⚠️  ADVERTENCIA DE SEGURIDAD: JWT_SECRET no está en .env\n" +
+    "   Se usa clave temporal de desarrollo. NUNCA uses esto en producción.\n" +
+    "   Agrega JWT_SECRET=<clave-segura-aleatoria> a tu archivo .env\n"
+  );
+}
+const JWT_SECRET = _JWT_SECRET_ENV || "access_control_secret_2025_DEV_ONLY";
 
 /**
  * verificarToken

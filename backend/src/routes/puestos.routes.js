@@ -11,36 +11,60 @@ router.get("/", (req, res) => {
   return res.json(store.getPuestos());
 });
 
-/** POST /api/puestos — Crear puesto (super_admin, agente_soporte_ti) */
-router.post("/", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req, res) => {
-  const { nombre, descripcion, horarioId } = req.body;
+const ROLES_ADMIN = [ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI, ROLES.ADMINISTRADOR_GENERAL];
+
+/** POST /api/puestos — Crear puesto */
+router.post("/", requireRoles(...ROLES_ADMIN), (req, res) => {
+  const { nombre, descripcion, horarioId, areaId } = req.body;
   if (!nombre) return res.status(400).json({ error: "El nombre es obligatorio" });
   if (horarioId && !store.getHorarioById(horarioId))
     return res.status(400).json({ error: "El horario especificado no existe" });
-  const nuevo = store.createPuesto({ nombre, descripcion: descripcion || "", horarioId: horarioId || null });
+  if (areaId && !store.getAreaById(areaId))
+    return res.status(400).json({ error: "El área especificada no existe" });
+  const nuevo = store.createPuesto({
+    nombre,
+    descripcion: descripcion || "",
+    horarioId: horarioId || null,
+    areaId: areaId || null,
+  });
   return res.status(201).json(nuevo);
 });
 
-/** PUT /api/puestos/:id — Actualizar puesto (super_admin, agente_soporte_ti) */
-router.put("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req, res) => {
-  const { nombre, descripcion, horarioId, activo } = req.body;
+/** PUT /api/puestos/:id — Actualizar puesto */
+router.put("/:id", requireRoles(...ROLES_ADMIN), (req, res) => {
+  const { nombre, descripcion, horarioId, areaId, activo } = req.body;
   if (horarioId && !store.getHorarioById(horarioId))
     return res.status(400).json({ error: "El horario especificado no existe" });
+  if (areaId && !store.getAreaById(areaId))
+    return res.status(400).json({ error: "El área especificada no existe" });
   const actualizado = store.updatePuesto(req.params.id, {
     ...(nombre !== undefined && { nombre }),
     ...(descripcion !== undefined && { descripcion }),
     ...(horarioId !== undefined && { horarioId: horarioId || null }),
+    ...(areaId !== undefined && { areaId: areaId || null }),
     ...(activo !== undefined && { activo }),
   });
   if (!actualizado) return res.status(404).json({ error: "Puesto no encontrado" });
   return res.json(actualizado);
 });
 
-/** DELETE /api/puestos/:id — Desactivar puesto (super_admin, agente_soporte_ti) */
-router.delete("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req, res) => {
+/** DELETE /api/puestos/:id — Eliminar puesto (solo si no tiene empleados activos) */
+router.delete("/:id", requireRoles(...ROLES_ADMIN), (req, res) => {
+  const puesto = store.getPuestoById(req.params.id);
+  if (!puesto) return res.status(404).json({ error: "Puesto no encontrado" });
+
+  // Verificar si hay empleados activos con este puesto
+  const empleados = store.getUsuarios({ activo: true }).filter((u) => u.puestoId === req.params.id);
+  if (empleados.length > 0) {
+    return res.status(409).json({
+      error: `No se puede eliminar: ${empleados.length} empleado(s) tienen este puesto asignado`,
+      empleadosCount: empleados.length,
+    });
+  }
+
   const ok = store.deletePuesto(req.params.id);
   if (!ok) return res.status(404).json({ error: "Puesto no encontrado" });
-  return res.json({ mensaje: "Puesto desactivado" });
+  return res.json({ ok: true, mensaje: "Puesto eliminado" });
 });
 
 /**

@@ -12,7 +12,7 @@ router.get("/", requireRoles(...ROLES_GESTION), (req, res) => {
 });
 
 /** POST /api/horarios — Crear horario (super_admin, agente_soporte_ti) */
-router.post("/", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req, res) => {
+router.post("/", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI, ROLES.NOMINAS), (req, res) => {
   const { nombre, horaEntrada, horaSalida, horaSalidaAlimentos, horaRegresoAlimentos, diasLaborales, toleranciaMinutos } = req.body;
   if (!nombre || !horaEntrada || !horaSalida || !diasLaborales) {
     return res.status(400).json({ error: "nombre, horaEntrada, horaSalida y diasLaborales son obligatorios" });
@@ -30,7 +30,7 @@ router.post("/", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req,
 });
 
 /** PUT /api/horarios/:id — Actualizar horario (super_admin, agente_soporte_ti) */
-router.put("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req, res) => {
+router.put("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI, ROLES.NOMINAS), (req, res) => {
   const { nombre, horaEntrada, horaSalida, horaSalidaAlimentos, horaRegresoAlimentos, diasLaborales, toleranciaMinutos, activo } = req.body;
   const actualizado = store.updateHorario(req.params.id, {
     ...(nombre !== undefined && { nombre }),
@@ -47,14 +47,28 @@ router.put("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (re
 });
 
 /** DELETE /api/horarios/:id — Desactivar horario (super_admin, agente_soporte_ti) */
-router.delete("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req, res) => {
+router.delete("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI, ROLES.NOMINAS), (req, res) => {
+  // Validar que no haya usuarios con este horario asignado
+  const usuariosConHorario = store.getUsuarios({ horarioId: req.params.id, activo: true });
+  if (usuariosConHorario.length > 0) {
+    return res.status(409).json({
+      error: `No se puede eliminar: ${usuariosConHorario.length} empleado(s) tienen este horario asignado.`,
+    });
+  }
+  // Validar que no haya puestos con este horario asignado
+  const puestosConHorario = store.getPuestos().filter((p) => p.horarioId === req.params.id);
+  if (puestosConHorario.length > 0) {
+    return res.status(409).json({
+      error: `No se puede eliminar: ${puestosConHorario.length} puesto(s) tienen este horario asignado.`,
+    });
+  }
   const ok = store.deleteHorario(req.params.id);
   if (!ok) return res.status(404).json({ error: "Horario no encontrado" });
   return res.json({ mensaje: "Horario desactivado" });
 });
 
 /** PUT /api/horarios/asignar/:usuarioId — Asignar horario a usuario */
-router.put("/asignar/:usuarioId", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), (req, res) => {
+router.put("/asignar/:usuarioId", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI, ROLES.NOMINAS), (req, res) => {
   const { horarioId } = req.body;
   const usuario = store.getUsuarioById(req.params.usuarioId);
   if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });

@@ -4,14 +4,225 @@
  * Soporta campos extra por puesto y campo `tipo` de empleado.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  getUsuarios, getPuestos, getSucursales,
+  getUsuarios, getUsuariosPaginados, getPuestos, getSucursales, getHorarios,
   crearUsuario, actualizarUsuario, eliminarUsuario,
-  subirFotoEmpleado,
+  subirFotoEmpleado, descargarPlantillaImportacion, importarUsuarios,
+  reset2FA, getAreas, verificarEmailDisponible,
 } from "../utils/api";
 import { getGrupos } from "../utils/api";
 import { useAuth } from "../context/AuthContext";
+import { toastExito, toastError, toastAviso, confirmar } from "../utils/toast";
+
+// ─── Validación de contraseña ─────────────────────────────────────────────────
+const PWD_RULES = [
+  { id: "len",     label: "Mínimo 8 caracteres",            test: (p) => p.length >= 8 },
+  { id: "upper",   label: "Al menos una letra mayúscula",   test: (p) => /[A-Z]/.test(p) },
+  { id: "lower",   label: "Al menos una letra minúscula",   test: (p) => /[a-z]/.test(p) },
+  { id: "num",     label: "Al menos un número",             test: (p) => /[0-9]/.test(p) },
+  { id: "special", label: "Al menos un carácter especial",  test: (p) => /[!@#$%^&*()\-_=+[\]{};':"\\|,.<>/?`~]/.test(p) },
+];
+
+/**
+ * Muestra los requisitos de contraseña en tiempo real.
+ * Solo se muestra cuando el campo tiene valor.
+ */
+const PasswordStrength = ({ password }) => {
+  if (!password) return null;
+  const cumplidos = PWD_RULES.filter((r) => r.test(password)).length;
+  const porcentaje = (cumplidos / PWD_RULES.length) * 100;
+  const color = porcentaje < 40 ? "#ef4444" : porcentaje < 80 ? "#f59e0b" : "#22c55e";
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      {/* Barra de fuerza */}
+      <div style={{ height: 4, background: "var(--border)", borderRadius: 2, marginBottom: 8, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${porcentaje}%`, background: color, transition: "width 0.25s, background 0.25s", borderRadius: 2 }} />
+      </div>
+      {/* Checklist de reglas */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {PWD_RULES.map((r) => {
+          const ok = r.test(password);
+          return (
+            <span key={r.id} style={{ fontSize: 11, color: ok ? "#22c55e" : "#ef4444", display: "flex", alignItems: "center", gap: 5 }}>
+              {ok ? "✓" : "✗"} {r.label}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ─── Constante días de la semana para el diseñador de horario ─────────────────
+const DIAS_SEMANA = [
+  { value: 1, label: "Lunes" },
+  { value: 2, label: "Martes" },
+  { value: 3, label: "Miércoles" },
+  { value: 4, label: "Jueves" },
+  { value: 5, label: "Viernes" },
+  { value: 6, label: "Sábado" },
+  { value: 0, label: "Domingo" },
+];
+
+const DEFAULT_CONFIG_DIAS = DIAS_SEMANA.map((d) => ({
+  dia: d.value,
+  activo: d.value >= 1 && d.value <= 5,
+  entrada: "09:00",
+  salida: "19:00",
+  tieneComida: false,
+  comidaInicio: "13:00",
+  comidaFin: "14:00",
+}));
+
+/** Componente visual de horario por día — inspirado en el selector de Booking.com */
+function DiseñadorHorario({ value, onChange }) {
+  const dias = Array.isArray(value) && value.length === 7 ? value : DEFAULT_CONFIG_DIAS;
+
+  const update = (diaValue, campo, val) => {
+    const next = dias.map((d) =>
+      d.dia === diaValue ? { ...d, [campo]: val } : d
+    );
+    onChange(next);
+  };
+
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+      {dias.map((d, i) => {
+        const info = DIAS_SEMANA.find((x) => x.value === d.dia);
+        return (
+          <div
+            key={d.dia}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "90px 1fr",
+              alignItems: "center",
+              padding: "8px 12px",
+              background: i % 2 === 0 ? "var(--bg-card)" : "var(--bg-secondary)",
+              borderBottom: i < 6 ? "1px solid var(--border)" : "none",
+              gap: 8,
+            }}
+          >
+            {/* Nombre del día + toggle */}
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", userSelect: "none" }}>
+              <input
+                type="checkbox"
+                checked={d.activo}
+                onChange={(e) => update(d.dia, "activo", e.target.checked)}
+                style={{ width: 14, height: 14 }}
+              />
+              <span style={{ fontWeight: 600, fontSize: 13, color: d.activo ? "var(--text)" : "var(--text-muted)" }}>
+                {info?.label}
+              </span>
+            </label>
+
+            {/* Horarios del día */}
+            {d.activo ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                {/* Entrada */}
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="time"
+                    value={d.entrada}
+                    onChange={(e) => update(d.dia, "entrada", e.target.value)}
+                    style={{
+                      padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)",
+                      background: "var(--bg3)", color: "var(--text)", fontSize: 13, width: 100,
+                    }}
+                  />
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>–</span>
+                  <input
+                    type="time"
+                    value={d.salida}
+                    onChange={(e) => update(d.dia, "salida", e.target.value)}
+                    style={{
+                      padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)",
+                      background: "var(--bg3)", color: "var(--text)", fontSize: 13, width: 100,
+                    }}
+                  />
+                </div>
+
+                {/* Hora de comida */}
+                {d.tieneComida ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>🍽</span>
+                    <input
+                      type="time"
+                      value={d.comidaInicio}
+                      onChange={(e) => update(d.dia, "comidaInicio", e.target.value)}
+                      style={{
+                        padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)",
+                        background: "var(--bg3)", color: "var(--text)", fontSize: 13, width: 100,
+                      }}
+                    />
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>–</span>
+                    <input
+                      type="time"
+                      value={d.comidaFin}
+                      onChange={(e) => update(d.dia, "comidaFin", e.target.value)}
+                      style={{
+                        padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)",
+                        background: "var(--bg3)", color: "var(--text)", fontSize: 13, width: 100,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => update(d.dia, "tieneComida", false)}
+                      title="Quitar hora de comida"
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "var(--danger)", fontSize: 16, lineHeight: 1, padding: "0 2px",
+                      }}
+                    >×</button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => update(d.dia, "tieneComida", true)}
+                    style={{
+                      padding: "3px 10px", borderRadius: 20, fontSize: 11,
+                      border: "1px dashed var(--border)", cursor: "pointer",
+                      background: "none", color: "var(--text-muted)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    + Hora de comida
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{
+                fontSize: 13, color: "var(--text-muted)", fontStyle: "italic",
+                background: "var(--bg-secondary)", borderRadius: 6,
+                padding: "6px 12px", border: "1px dashed var(--border)",
+                textAlign: "center",
+              }}>
+                Día libre
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Calcula años de antigüedad desde una fecha ISO */
+function calcularAntigüedad(fechaInicioActividades) {
+  if (!fechaInicioActividades) return null;
+  const inicio = new Date(fechaInicioActividades);
+  const hoy = new Date();
+  let anios = hoy.getFullYear() - inicio.getFullYear();
+  const m = hoy.getMonth() - inicio.getMonth();
+  if (m < 0 || (m === 0 && hoy.getDate() < inicio.getDate())) anios--;
+  const mesesTotal = (hoy.getFullYear() - inicio.getFullYear()) * 12 + (hoy.getMonth() - inicio.getMonth());
+  const meses = ((mesesTotal % 12) + 12) % 12;
+  if (anios > 0) return `${anios} año${anios !== 1 ? "s" : ""}${meses > 0 ? ` ${meses} mes${meses !== 1 ? "es" : ""}` : ""}`;
+  if (meses > 0) return `${meses} mes${meses !== 1 ? "es" : ""}`;
+  return "< 1 mes";
+}
 
 const BASE = "http://localhost:4000";
 
@@ -22,6 +233,7 @@ const ROLES_DISPONIBLES = [
   { value: "agente_control_asistencia", label: "Agente Control Asistencia" },
   { value: "agente_soporte_ti",         label: "Agente Soporte TI" },
   { value: "visor_reportes",            label: "Visor de Reportes" },
+  { value: "nominas",                   label: "Nóminas" },
   { value: "super_admin",               label: "Super Administrador" },
 ];
 
@@ -32,41 +244,56 @@ const FORM_VACIO = {
   password: "",
   sexo: "masculino",
   edad: "",
+  fechaNacimiento: "",
+  fechaInicioActividades: "",
   puestoId: "",
+  horarioId: "",
+  usaHorarioPuesto: false,
+  configDiasHorario: null,
   sucursalId: "",
   rol: "medico_titular",
   tipo: "sucursal",
   departamento: "",
   datosExtra: {},
+  jefeInmediatoId: "",
+  area: "",
 };
 
 const SEXO_ICON = { masculino: "👨", femenino: "👩", otro: "🧑" };
 
 const ROL_LABEL = {
   super_admin: "Super Admin",
+  administrador_general: "Admin General",
   agente_soporte_ti: "Soporte TI",
   supervisor_sucursales: "Supervisor",
   agente_control_asistencia: "Control Asist.",
   visor_reportes: "Visor",
   medico_titular: "Médico Titular",
   medico_de_guardia: "Médico Guardia",
+  nominas: "Nóminas",
 };
 
 // Roles que pueden ver todos los tabs
-const ROLES_VER_TODOS = ["super_admin", "agente_soporte_ti"];
+const ROLES_VER_TODOS = ["super_admin", "agente_soporte_ti", "administrador_general"];
 // Roles que pueden ver el tab corporativo
-const ROLES_VER_CORPORATIVO = ["super_admin", "agente_soporte_ti"];
+const ROLES_VER_CORPORATIVO = ["super_admin", "agente_soporte_ti", "administrador_general"];
 // Roles que pueden gestionar (crear/editar/eliminar)
-const ROLES_GESTIONAR = ["super_admin", "agente_soporte_ti"];
+const ROLES_GESTIONAR = ["super_admin", "agente_soporte_ti", "administrador_general", "nominas"];
+// Roles que pueden ELIMINAR empleados
+const ROLES_ELIMINAR  = ["super_admin", "agente_soporte_ti", "administrador_general", "nominas"];
 
 const Usuarios = () => {
-  const { usuario: usuarioActual } = useAuth();
+  const { usuario: usuarioActual, setUsuario: setUsuarioActual } = useAuth();
 
-  const [usuarios, setUsuarios]     = useState([]);
+  const queryClient = useQueryClient();
+  const LIMIT = 25; // empleados por página
+  const [pagina, setPagina] = useState(1);
+
   const [puestos, setPuestos]       = useState([]);
   const [sucursales, setSucursales] = useState([]);
   const [grupos, setGrupos]         = useState([]);
-  const [cargando, setCargando]     = useState(true);
+  const [horarios, setHorarios]     = useState([]);
+  const [areas, setAreas]           = useState([]);
   const [modal, setModal]           = useState(false);
   const [editando, setEditando]     = useState(null);
   const [form, setForm]             = useState(FORM_VACIO);
@@ -82,36 +309,91 @@ const Usuarios = () => {
   const [fotoFile, setFotoFile]       = useState(null);
   const fotoInputRef = useRef(null);
 
+  // Modal importar CSV
+  const [modalImportar, setModalImportar]   = useState(false);
+  const [csvFile, setCsvFile]               = useState(null);
+  const [resultadoImport, setResultadoImport] = useState(null);
+  const [importando, setImportando]         = useState(false);
+  const csvInputRef = useRef(null);
+
+  // Validación email en tiempo real
+  const [emailEstado, setEmailEstado] = useState(null); // null | "verificando" | "disponible" | "ocupado"
+  const emailTimerRef = useRef(null);
+
   const rolActual = usuarioActual?.rol || "";
-  const puedeVerTodos      = ROLES_VER_TODOS.includes(rolActual);
+  const puedeVerTodos       = ROLES_VER_TODOS.includes(rolActual);
   const puedeVerCorporativo = ROLES_VER_CORPORATIVO.includes(rolActual);
-  const puedeGestionar     = ROLES_GESTIONAR.includes(rolActual);
+  const puedeGestionar      = ROLES_GESTIONAR.includes(rolActual);
 
   // El tab inicial depende del rol
   const tabInicial = puedeVerTodos ? "todos" : "sucursales";
+  useEffect(() => { setTabActivo(tabInicial); }, [rolActual]); // eslint-disable-line
+
+  // ─── React Query: carga de empleados paginada con caché ───────────────
+  const queryKey = ["usuarios", tabActivo, filtroSucursal, filtroGrupo, busqueda, pagina];
+
+  const {
+    data: usuariosData,
+    isLoading: cargando,
+    isFetching,
+  } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const filtros = { page: pagina, limit: LIMIT };
+      if (tabActivo === "corporativo") filtros.tipo = "corporativo";
+      if (tabActivo === "sucursales")  filtros.tipo = "sucursal";
+      if (filtroSucursal) filtros.sucursalId = filtroSucursal;
+      if (filtroGrupo)    filtros.grupoId    = filtroGrupo;
+      if (busqueda)       filtros.q          = busqueda;
+      const res = await getUsuariosPaginados(filtros);
+      // Compatibilidad: respuesta puede ser array (sin paginación) o { data, total, pages }
+      if (Array.isArray(res)) return { data: res, total: res.length, page: 1, pages: 1 };
+      return res;
+    },
+    placeholderData: (prev) => prev, // mantiene datos anteriores mientras carga nueva página
+  });
+
+  const usuarios        = usuariosData?.data    ?? [];
+  const totalUsuarios   = usuariosData?.total   ?? 0;
+  const totalPaginas    = usuariosData?.pages   ?? 1;
+
+  // Prefetch de la siguiente página
+  useEffect(() => {
+    if (pagina < totalPaginas) {
+      const nextFiltros = { page: pagina + 1, limit: LIMIT };
+      if (tabActivo === "corporativo") nextFiltros.tipo = "corporativo";
+      if (tabActivo === "sucursales")  nextFiltros.tipo = "sucursal";
+      if (filtroSucursal) nextFiltros.sucursalId = filtroSucursal;
+      if (filtroGrupo)    nextFiltros.grupoId    = filtroGrupo;
+      if (busqueda)       nextFiltros.q          = busqueda;
+      queryClient.prefetchQuery({
+        queryKey: ["usuarios", tabActivo, filtroSucursal, filtroGrupo, busqueda, pagina + 1],
+        queryFn: () => getUsuariosPaginados(nextFiltros),
+      });
+    }
+  }, [pagina, totalPaginas, tabActivo, filtroSucursal, filtroGrupo, busqueda, queryClient]);
+
+  // Resetear a página 1 cuando cambien los filtros
+  useEffect(() => { setPagina(1); }, [tabActivo, filtroSucursal, filtroGrupo, busqueda]);
+
+  // ─── Catálogos auxiliares (sin paginación, caché larga) ──────────────
+  const { data: puestosData    } = useQuery({ queryKey: ["puestos"],    queryFn: getPuestos,    staleTime: 10 * 60 * 1000 });
+  const { data: sucursalesData } = useQuery({ queryKey: ["sucursales"], queryFn: getSucursales, staleTime: 10 * 60 * 1000 });
+  const { data: gruposData     } = useQuery({ queryKey: ["grupos"],     queryFn: getGrupos,     staleTime: 10 * 60 * 1000 });
+  const { data: horariosData   } = useQuery({ queryKey: ["horarios"],   queryFn: getHorarios,   staleTime: 10 * 60 * 1000 });
+  const { data: areasData      } = useQuery({ queryKey: ["areas"],      queryFn: getAreas,      staleTime: 10 * 60 * 1000 });
 
   useEffect(() => {
-    setTabActivo(tabInicial);
-  }, [rolActual]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (puestosData)    setPuestos(Array.isArray(puestosData)    ? puestosData    : []);
+    if (sucursalesData) setSucursales(Array.isArray(sucursalesData) ? sucursalesData : []);
+    if (gruposData)     setGrupos(Array.isArray(gruposData)     ? gruposData     : []);
+    if (horariosData)   setHorarios(Array.isArray(horariosData)   ? horariosData   : []);
+    if (areasData)      setAreas(Array.isArray(areasData)      ? areasData      : []);
+  }, [puestosData, sucursalesData, gruposData, horariosData, areasData]);
 
-  const cargarDatos = async () => {
-    try {
-      const [u, p, s, g] = await Promise.all([
-        getUsuarios(),
-        getPuestos(),
-        getSucursales(),
-        getGrupos(),
-      ]);
-      setUsuarios(Array.isArray(u) ? u : []);
-      setPuestos(Array.isArray(p) ? p : []);
-      setSucursales(Array.isArray(s) ? s : []);
-      setGrupos(Array.isArray(g) ? g : []);
-    } finally {
-      setCargando(false);
-    }
+  const cargarDatos = () => {
+    queryClient.invalidateQueries({ queryKey: ["usuarios"] });
   };
-
-  useEffect(() => { cargarDatos(); }, []);
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
   const nombreSucursal = (id) => sucursales.find((s) => s.id === id)?.nombre || "—";
@@ -134,30 +416,11 @@ const Usuarios = () => {
         lista = lista.filter((u) => u.sucursalId === usuarioActual.sucursalId);
       }
     }
-
-    // Filtros adicionales en tab sucursales
-    if (filtroSucursal && tab === "sucursales") {
-      lista = lista.filter((u) => u.sucursalId === filtroSucursal);
-    }
-    if (filtroGrupo && tab === "sucursales") {
-      lista = lista.filter((u) => u.grupoId === filtroGrupo);
-    }
-
-    // Búsqueda de texto
-    if (busqueda) {
-      const txt = busqueda.toLowerCase();
-      lista = lista.filter((u) =>
-        `${u.nombre} ${u.apellido} ${u.email}`.toLowerCase().includes(txt)
-      );
-    }
-
     return lista;
   };
 
-  const listaCorporativo = usuarios.filter((u) => u.tipo === "corporativo");
-  const listaSucursales  = usuarios.filter((u) => u.tipo === "sucursal" || !u.tipo);
-
-  const usuariosFiltrados = usuariosPorTab(tabActivo);
+  // Con paginación server-side, usuarios ya viene filtrado del backend
+  const usuariosFiltrados = usuarios;
 
   // ─── Modal ─────────────────────────────────────────────────────────────────
   const abrirCrear = () => {
@@ -169,11 +432,13 @@ const Usuarios = () => {
     setFotoPreview(null);
     setFotoFile(null);
     setError("");
+    setEmailEstado(null);
     setModal(true);
   };
 
   const abrirEditar = (u) => {
     setEditando(u.id);
+    setEmailEstado(null);
     setForm({
       nombre:      u.nombre,
       apellido:    u.apellido ?? "",
@@ -181,12 +446,21 @@ const Usuarios = () => {
       password:    "",
       sexo:        u.sexo,
       edad:        u.edad,
+      fechaNacimiento:        u.fechaNacimiento ? u.fechaNacimiento.slice(0, 10) : "",
+      fechaInicioActividades: u.fechaInicioActividades ? u.fechaInicioActividades.slice(0, 10) : "",
       puestoId:    u.puestoId ?? "",
+      horarioId:   u.horarioId ?? "",
+      usaHorarioPuesto: !!u.usaHorarioPuesto,
+      configDiasHorario: Array.isArray(u.configDiasHorario) && u.configDiasHorario.length === 7
+        ? u.configDiasHorario
+        : DEFAULT_CONFIG_DIAS,
       sucursalId:  u.sucursalId ?? "",
       rol:         u.rol,
       tipo:        u.tipo || "sucursal",
       departamento: u.departamento ?? "",
       datosExtra:  u.datosExtra || {},
+      jefeInmediatoId: u.jefeInmediatoId ?? "",
+      area:           u.area ?? "",
     });
     setFotoPreview(u.fotoUrl ? `${BASE}${u.fotoUrl}` : null);
     setFotoFile(null);
@@ -201,8 +475,27 @@ const Usuarios = () => {
     setFotoPreview(URL.createObjectURL(file));
   };
 
+  // Verificación de email único con debounce de 600ms
+  const verificarEmail = useCallback((emailVal, excluirId) => {
+    clearTimeout(emailTimerRef.current);
+    if (!emailVal || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+      setEmailEstado(null);
+      return;
+    }
+    setEmailEstado("verificando");
+    emailTimerRef.current = setTimeout(async () => {
+      try {
+        const { disponible } = await verificarEmailDisponible(emailVal, excluirId || "");
+        setEmailEstado(disponible ? "disponible" : "ocupado");
+      } catch {
+        setEmailEstado(null); // no bloquear si el servidor falla
+      }
+    }, 600);
+  }, []);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
+    if (name === "email") verificarEmail(value, editando?.id);
     setForm((prev) => {
       const next = { ...prev, [name]: value };
       // Al cambiar tipo, limpiar campos que no aplican
@@ -211,6 +504,15 @@ const Usuarios = () => {
           next.sucursalId = "";
         } else {
           next.departamento = "";
+        }
+      }
+      // Al seleccionar sucursal: sincronizar tipo del empleado con el tipo de la sucursal
+      if (name === "sucursalId" && value) {
+        const sucursalSeleccionada = sucursales.find((s) => s.id === value);
+        if (sucursalSeleccionada?.tipo === "corporativo") {
+          next.tipo = "corporativo";
+        } else if (sucursalSeleccionada) {
+          next.tipo = "sucursal";
         }
       }
       // Al cambiar puesto, resetear datosExtra
@@ -230,13 +532,25 @@ const Usuarios = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (emailEstado === "ocupado") {
+      toastError("El correo electrónico ya está en uso por otro usuario.");
+      return;
+    }
+    if (emailEstado === "verificando") {
+      toastAviso("Espera un momento, verificando disponibilidad del correo…");
+      return;
+    }
     setError("");
     setGuardando(true);
     try {
       const datos = { ...form };
       if (!datos.password) delete datos.password;
+      // Solo limpiar sucursalId si es corporativo y la sucursal elegida NO es corporativa
       if (datos.tipo === "corporativo") {
-        datos.sucursalId = null;
+        const sucursalElegida = sucursales.find((s) => s.id === datos.sucursalId);
+        if (!sucursalElegida || sucursalElegida.tipo !== "corporativo") {
+          datos.sucursalId = null;
+        }
       }
       if (datos.tipo === "sucursal") {
         delete datos.departamento;
@@ -244,6 +558,10 @@ const Usuarios = () => {
       // Limpiar datosExtra vacíos
       if (datos.datosExtra && Object.keys(datos.datosExtra).length === 0) {
         delete datos.datosExtra;
+      }
+      // Si usa horario del puesto o tiene un horario base asignado, limpiar configDiasHorario
+      if (datos.usaHorarioPuesto || datos.horarioId) {
+        datos.configDiasHorario = null;
       }
 
       let uid = editando;
@@ -255,10 +573,15 @@ const Usuarios = () => {
       }
       // Subir foto si se seleccionó una
       if (fotoFile && uid) {
-        await subirFotoEmpleado(uid, fotoFile);
+        const fotoRes = await subirFotoEmpleado(uid, fotoFile);
+        // Si el empleado editado es el usuario logueado, sincronizar AuthContext
+        if (uid === usuarioActual?.id && fotoRes?.fotoUrl) {
+          setUsuarioActual((prev) => ({ ...prev, fotoUrl: fotoRes.fotoUrl }));
+        }
       }
       setModal(false);
-      await cargarDatos();
+      toastExito(editando ? "Empleado actualizado correctamente" : "Empleado creado exitosamente");
+      queryClient.invalidateQueries({ queryKey: ["usuarios"] });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -267,12 +590,43 @@ const Usuarios = () => {
   };
 
   const handleEliminar = async (id) => {
-    if (!window.confirm("¿Desactivar este usuario?")) return;
+    if (!(await confirmar("¿Eliminar/desactivar este empleado? Esta acción no puede deshacerse fácilmente.", "Eliminar", "danger"))) return;
     try {
       await eliminarUsuario(id);
+      toastExito("Empleado desactivado");
+      queryClient.invalidateQueries({ queryKey: ["usuarios"] });
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
+  const handleDescargarPlantilla = async () => {
+    try {
+      const blob = await descargarPlantillaImportacion();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = "plantilla_empleados.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
+  const handleImportar = async () => {
+    if (!csvFile) { toastAviso("Selecciona un archivo CSV"); return; }
+    try {
+      setImportando(true);
+      const res = await importarUsuarios(csvFile);
+      setResultadoImport(res);
+      setCsvFile(null);
+      if (csvInputRef.current) csvInputRef.current.value = "";
       await cargarDatos();
     } catch (err) {
-      alert(err.message);
+      toastError(err);
+    } finally {
+      setImportando(false);
     }
   };
 
@@ -346,10 +700,22 @@ const Usuarios = () => {
                   <div>
                     <div className="user-name">{u.nombre} {u.apellido}</div>
                     <div className="user-email">{u.email}</div>
+                    {u.fechaInicioActividades && (
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                        🏢 {calcularAntigüedad(u.fechaInicioActividades)}
+                      </div>
+                    )}
                   </div>
                 </div>
               </td>
-              <td><span className="capitalize">{u.sexo}</span> · {u.edad} años</td>
+              <td>
+                <span className="capitalize">{u.sexo}</span> · {u.edad} años
+                {u.fechaNacimiento && (
+                  <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                    🎂 {new Date(u.fechaNacimiento + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                  </div>
+                )}
+              </td>
               <td>{nombrePuesto(u.puestoId)}</td>
               {esCorporativoTab
                 ? <td>{u.departamento || "—"}</td>
@@ -373,11 +739,26 @@ const Usuarios = () => {
                       onClick={() => abrirEditar(u)}
                       title="Editar"
                     >✏️</button>
-                    {u.activo && (
+                    {/* Reset 2FA — solo super_admin y agente_soporte_ti, solo para empleados (no para uno mismo) */}
+                    {u.totpHabilitado && ["super_admin", "agente_soporte_ti", "administrador_general"].includes(rolActual) && u.id !== usuarioActual?.id && (
+                      <button
+                        className="btn btn-warning btn-xs"
+                        title="Restablecer 2FA"
+                        onClick={async () => {
+                          if (!(await confirmar(`¿Restablecer el 2FA de ${u.nombre} ${u.apellido}? Deberá configurarlo de nuevo.`, "Confirmar", "warning"))) return;
+                          try {
+                            await reset2FA(u.id);
+                            await cargarDatos();
+                            toastExito(`2FA restablecido para ${u.nombre}`);
+                          } catch (err) { toastError(err); }
+                        }}
+                      >🔓 2FA</button>
+                    )}
+                    {u.activo && ROLES_ELIMINAR.includes(rolActual) && u.id !== usuarioActual?.id && (
                       <button
                         className="btn btn-danger btn-xs"
                         onClick={() => handleEliminar(u.id)}
-                        title="Desactivar"
+                        title="Eliminar"
                       >🗑️</button>
                     )}
                   </div>
@@ -387,10 +768,57 @@ const Usuarios = () => {
           ))}
         </tbody>
       </table>
-      {lista.length === 0 && (
+      {lista.length === 0 && !cargando && (
         <div className="empty-state">
           <div className="empty-icon">👥</div>
           <p>No se encontraron empleados.</p>
+        </div>
+      )}
+
+      {/* ── Paginación ───────────────────────────────────────────────── */}
+      {totalPaginas > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderTop: "1px solid var(--border)", marginTop: 8 }}>
+          <span style={{ fontSize: 13, color: "var(--text2)" }}>
+            {isFetching ? "Actualizando…" : `${totalUsuarios} empleado${totalUsuarios !== 1 ? "s" : ""} · Página ${pagina} de ${totalPaginas}`}
+          </span>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button
+              className="btn btn-secondary"
+              style={{ padding: "4px 10px", fontSize: 13 }}
+              disabled={pagina <= 1}
+              onClick={() => setPagina(1)}
+            >«</button>
+            <button
+              className="btn btn-secondary"
+              style={{ padding: "4px 10px", fontSize: 13 }}
+              disabled={pagina <= 1}
+              onClick={() => setPagina((p) => p - 1)}
+            >‹ Anterior</button>
+            {Array.from({ length: Math.min(5, totalPaginas) }, (_, i) => {
+              const start = Math.max(1, Math.min(pagina - 2, totalPaginas - 4));
+              const p = start + i;
+              return p <= totalPaginas ? (
+                <button
+                  key={p}
+                  className={p === pagina ? "btn btn-primary" : "btn btn-secondary"}
+                  style={{ padding: "4px 10px", fontSize: 13, minWidth: 36 }}
+                  onClick={() => setPagina(p)}
+                >{p}</button>
+              ) : null;
+            })}
+            <button
+              className="btn btn-secondary"
+              style={{ padding: "4px 10px", fontSize: 13 }}
+              disabled={pagina >= totalPaginas}
+              onClick={() => setPagina((p) => p + 1)}
+            >Siguiente ›</button>
+            <button
+              className="btn btn-secondary"
+              style={{ padding: "4px 10px", fontSize: 13 }}
+              disabled={pagina >= totalPaginas}
+              onClick={() => setPagina(totalPaginas)}
+            >»</button>
+          </div>
         </div>
       )}
     </div>
@@ -399,12 +827,12 @@ const Usuarios = () => {
   // ─── Tabs disponibles ──────────────────────────────────────────────────────
   const tabs = [];
   if (puedeVerTodos) {
-    tabs.push({ id: "todos", label: `Todos` });
+    tabs.push({ id: "todos", label: `Todos (${totalUsuarios})` });
   }
   if (puedeVerCorporativo) {
-    tabs.push({ id: "corporativo", label: `🏛️ Corporativo (${listaCorporativo.length})` });
+    tabs.push({ id: "corporativo", label: `🏛️ Corporativo` });
   }
-  tabs.push({ id: "sucursales", label: `🏢 Sucursales (${listaSucursales.length})` });
+  tabs.push({ id: "sucursales", label: `🏢 Sucursales` });
 
   if (cargando) return <div className="loading">Cargando empleados…</div>;
 
@@ -416,9 +844,14 @@ const Usuarios = () => {
           <p className="page-subtitle">Gestión de personal por tipo y sucursal</p>
         </div>
         {puedeGestionar && (
-          <button className="btn btn-primary" onClick={abrirCrear}>
-            + Nuevo empleado
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-secondary" onClick={() => { setResultadoImport(null); setCsvFile(null); setModalImportar(true); }}>
+              📥 Importar CSV
+            </button>
+            <button className="btn btn-primary" onClick={abrirCrear}>
+              + Nuevo empleado
+            </button>
+          </div>
         )}
       </div>
 
@@ -557,7 +990,23 @@ const Usuarios = () => {
                   value={form.email}
                   onChange={handleChange}
                   required
+                  style={emailEstado === "ocupado" ? { borderColor: "#ef4444", background: "#fef2f2" } : emailEstado === "disponible" ? { borderColor: "#22c55e" } : {}}
                 />
+                {emailEstado === "verificando" && (
+                  <span style={{ fontSize: 12, color: "var(--text2)", marginTop: 4, display: "block" }}>
+                    🔄 Verificando disponibilidad…
+                  </span>
+                )}
+                {emailEstado === "ocupado" && (
+                  <span style={{ fontSize: 12, color: "#ef4444", marginTop: 4, display: "block", fontWeight: 500 }}>
+                    ❌ Este correo ya está registrado en el sistema
+                  </span>
+                )}
+                {emailEstado === "disponible" && (
+                  <span style={{ fontSize: 12, color: "#22c55e", marginTop: 4, display: "block" }}>
+                    ✅ Correo disponible
+                  </span>
+                )}
               </div>
 
               <div className="form-group">
@@ -572,7 +1021,9 @@ const Usuarios = () => {
                   value={form.password}
                   onChange={handleChange}
                   required={!editando}
+                  placeholder="Mín. 8 caracteres, mayúscula, número, especial"
                 />
+                <PasswordStrength password={form.password} />
               </div>
 
               <div className="form-row two-cols">
@@ -600,6 +1051,36 @@ const Usuarios = () => {
 
               <div className="form-row two-cols">
                 <div className="form-group">
+                  <label>Fecha de nacimiento</label>
+                  <input
+                    name="fechaNacimiento"
+                    type="date"
+                    className="form-control"
+                    value={form.fechaNacimiento}
+                    onChange={handleChange}
+                    max={new Date().toISOString().split("T")[0]}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Fecha inicio de actividades</label>
+                  <input
+                    name="fechaInicioActividades"
+                    type="date"
+                    className="form-control"
+                    value={form.fechaInicioActividades}
+                    onChange={handleChange}
+                    max={new Date().toISOString().split("T")[0]}
+                  />
+                  {form.fechaInicioActividades && (
+                    <small style={{ color: "var(--text-muted)" }}>
+                      Antigüedad: {calcularAntigüedad(form.fechaInicioActividades)}
+                    </small>
+                  )}
+                </div>
+              </div>
+
+              <div className="form-row two-cols">
+                <div className="form-group">
                   <label>Puesto *</label>
                   <select name="puestoId" value={form.puestoId} onChange={handleChange} required>
                     <option value="">Seleccionar…</option>
@@ -618,6 +1099,64 @@ const Usuarios = () => {
                 </div>
               </div>
 
+              {/* Horario */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+                <p style={{ fontWeight: "600", marginBottom: "0.75rem", color: "var(--text2)", fontSize: "0.85rem" }}>
+                  ⏰ Horario de trabajo
+                </p>
+                <div className="form-group">
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.usaHorarioPuesto}
+                      onChange={(e) => setForm((prev) => ({ ...prev, usaHorarioPuesto: e.target.checked }))}
+                    />
+                    Usar el horario asignado al puesto
+                  </label>
+                  <small style={{ color: "var(--text-muted)" }}>
+                    Si está activo, el empleado heredará el horario del puesto asignado. Si no, puedes asignar uno personalizado.
+                  </small>
+                </div>
+                {!form.usaHorarioPuesto && (
+                  <div className="form-group">
+                    <label>Horario base</label>
+                    <select
+                      name="horarioId"
+                      className="form-control"
+                      value={form.horarioId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setForm((prev) => ({
+                          ...prev,
+                          horarioId: id,
+                          // Al seleccionar horario base, limpiar diseñador
+                          configDiasHorario: id ? null : prev.configDiasHorario ?? DEFAULT_CONFIG_DIAS,
+                        }));
+                      }}
+                    >
+                      <option value="">— Diseñar horario personalizado —</option>
+                      {horarios.filter((h) => h.activo !== false).map((h) => (
+                        <option key={h.id} value={h.id}>{h.nombre}</option>
+                      ))}
+                    </select>
+                    <small style={{ color: "var(--text-muted)" }}>
+                      Selecciona un horario existente, o déjalo vacío para configurar días y horas manualmente.
+                    </small>
+                  </div>
+                )}
+                {!form.usaHorarioPuesto && !form.horarioId && (
+                  <div className="form-group">
+                    <label style={{ marginBottom: 8, display: "block" }}>
+                      📅 Configurar horario personalizado por día
+                    </label>
+                    <DiseñadorHorario
+                      value={form.configDiasHorario ?? DEFAULT_CONFIG_DIAS}
+                      onChange={(config) => setForm((prev) => ({ ...prev, configDiasHorario: config }))}
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Sucursal: solo requerida cuando tipo = sucursal */}
               <div className="form-group">
                 <label>
@@ -633,7 +1172,7 @@ const Usuarios = () => {
                   <option value="">Seleccionar sucursal…</option>
                   {sucursales.filter((s) => s.activa).map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.nombre} – {s.ciudad}
+                      {s.tipo === "corporativo" ? "🏛️" : "🏢"} {s.nombre} – {s.ciudad}
                     </option>
                   ))}
                 </select>
@@ -651,6 +1190,43 @@ const Usuarios = () => {
                   />
                 </div>
               )}
+
+              {/* Jefe inmediato y área organizacional */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+                <p style={{ fontWeight: "600", marginBottom: "0.75rem", color: "var(--text2)", fontSize: "0.85rem" }}>
+                  Organigrama
+                </p>
+                <div className="form-group">
+                  <label>Jefe inmediato</label>
+                  <select
+                    className="form-control"
+                    value={form.jefeInmediatoId}
+                    onChange={(e) => setForm({ ...form, jefeInmediatoId: e.target.value })}
+                  >
+                    <option value="">— Sin jefe inmediato —</option>
+                    {usuarios
+                      .filter((u) => u.activo && u.id !== editando)
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.nombre} {u.apellido || ""} ({ROL_LABEL[u.rol] || u.rol})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Área organizacional</label>
+                  <select
+                    className="form-control"
+                    value={form.area}
+                    onChange={(e) => setForm({ ...form, area: e.target.value })}
+                  >
+                    <option value="">Sin área asignada</option>
+                    {areas.map((a) => (
+                      <option key={a.id} value={a.nombre}>{a.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               {/* Campos extra del puesto */}
               {camposExtra.length > 0 && (
@@ -691,6 +1267,73 @@ const Usuarios = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Importar CSV ──────────────────────────────────────────────── */}
+      {modalImportar && (
+        <div className="modal-overlay" onClick={() => setModalImportar(false)}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>📥 Importar Empleados (CSV)</h2>
+              <button className="modal-close" onClick={() => setModalImportar(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {resultadoImport ? (
+                <div>
+                  <div className="alert alert-success" style={{ marginBottom: 12 }}>
+                    ✅ Importación completada: <strong>{resultadoImport.importados}</strong> empleado(s) importado(s).
+                  </div>
+                  {resultadoImport.errores?.length > 0 && (
+                    <div>
+                      <p style={{ fontWeight: 600, color: "var(--danger)", marginBottom: 8 }}>
+                        Errores ({resultadoImport.errores.length}):
+                      </p>
+                      <ul style={{ fontSize: 13, paddingLeft: 20, maxHeight: 160, overflowY: "auto" }}>
+                        {resultadoImport.errores.map((e, i) => (
+                          <li key={i} style={{ marginBottom: 4 }}>
+                            <strong>Fila {e.fila}:</strong> {e.error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p style={{ marginBottom: 12, color: "var(--text-muted)", fontSize: 14 }}>
+                    Descarga la plantilla, llénala con los datos de los empleados y sube el archivo CSV.
+                  </p>
+                  <button className="btn btn-secondary" style={{ marginBottom: 16 }} onClick={handleDescargarPlantilla}>
+                    📄 Descargar plantilla CSV
+                  </button>
+                  <div className="form-group">
+                    <label>Archivo CSV *</label>
+                    <input
+                      ref={csvInputRef}
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="form-control"
+                      onChange={(e) => setCsvFile(e.target.files[0])}
+                    />
+                    {csvFile && (
+                      <small style={{ color: "var(--text-muted)" }}>{csvFile.name} — {(csvFile.size / 1024).toFixed(1)} KB</small>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => { setModalImportar(false); setResultadoImport(null); }}>
+                {resultadoImport ? "Cerrar" : "Cancelar"}
+              </button>
+              {!resultadoImport && (
+                <button className="btn btn-primary" disabled={!csvFile || importando} onClick={handleImportar}>
+                  {importando ? "Importando..." : "Importar"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

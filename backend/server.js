@@ -8,6 +8,7 @@ const path = require("path");
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const rateLimit = require("express-rate-limit");
 const { Server } = require("socket.io");
 
 const authRoutes = require("./src/routes/auth.routes");
@@ -24,6 +25,10 @@ const configRoutes = require("./src/routes/config.routes");
 const auditoriaRoutes = require("./src/routes/auditoria.routes");
 const aclaracionesRoutes = require("./src/routes/aclaraciones.routes");
 const logsRoutes = require("./src/routes/logs.routes");
+const anunciosRoutes = require("./src/routes/anuncios.routes");
+const calendarioRoutes = require("./src/routes/calendario.routes");
+const vacacionesRoutes = require("./src/routes/vacaciones.routes");
+const areasRoutes = require("./src/routes/areas.routes");
 const { auditarAccion } = require("./src/middleware/auditoria.middleware");
 const notifService = require("./src/services/notificaciones.service");
 const logsService  = require("./src/services/logs.service");
@@ -33,8 +38,54 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
 
+// ─── CORS explícito con lista blanca desde .env ────────────────────────────
+const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || "http://localhost:3000")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Permitir peticiones sin origin (Postman, curl, server-to-server)
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS bloqueado: Origin '${origin}' no está en la lista blanca`));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+};
+
+// ─── Rate Limiting ─────────────────────────────────────────────────────────
+/** Límite general: 300 req / 15 min por IP */
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiadas peticiones. Intenta nuevamente en 15 minutos." },
+});
+
+/** Límite en endpoints de auth: 30 req / 15 min por IP */
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiados intentos. Intenta nuevamente en 15 minutos." },
+});
+
+/** Límite estricto para login: 10 intentos fallidos / 15 min por IP */
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // solo cuenta los fallidos
+  message: { error: "Demasiados intentos de acceso fallidos. Espera 15 minutos." },
+});
+
 const io = new Server(server, {
-  cors: { origin: process.env.FRONTEND_URL || "http://localhost:3000", methods: ["GET", "POST"] },
+  cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] },
 });
 
 notifService.setIo(io);
@@ -45,7 +96,9 @@ io.on("connection", (socket) => {
   });
 });
 
-app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:3000" }));
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // preflight para todos los endpoints
+app.use(globalLimiter);
 app.use(express.json());
 app.use(morgan("dev"));
 app.use(async (req, res, next) => {
@@ -64,8 +117,15 @@ app.use(async (req, res, next) => {
 app.use(auditarAccion);
 // Contar peticiones para métricas de salud
 app.use((req, _res, next) => { logsService.incrementRequests(); next(); });
+// /uploads: archivos estáticos (imágenes de empleados y adjuntos)
+// Nota: no se protege con JWT porque los <img src> del navegador no pueden
+// enviar cabeceras Authorization. Los UUIDs de nombres de archivo actúan
+// como tokens opacos suficientemente seguros para este uso.
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+// Rate limiting granular para auth
+app.use("/api/auth/login", loginLimiter);
+app.use("/api/auth", authLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/sucursales", sucursalesRoutes);
 app.use("/api/usuarios", usuariosRoutes);
@@ -80,6 +140,10 @@ app.use("/api/config", configRoutes);
 app.use("/api/auditoria", auditoriaRoutes);
 app.use("/api/aclaraciones", aclaracionesRoutes);
 app.use("/api/logs", logsRoutes);
+app.use("/api/anuncios", anunciosRoutes);
+app.use("/api/calendario", calendarioRoutes);
+app.use("/api/vacaciones", vacacionesRoutes);
+app.use("/api/areas", areasRoutes);
 app.get("/api/health", (req, res) =>
   res.json({
     status: "OK",

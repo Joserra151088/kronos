@@ -7,12 +7,15 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+const BASE_URL = "http://localhost:4000";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import {
   actualizarRegistroManual,
   crearRegistroManual,
   getGrupos,
+  getIncidencias,
   getRegistros,
   getSucursales,
   getUsuarios,
@@ -72,17 +75,18 @@ const Chip = ({ reg, tipo, diaStr, onClick }) => {
     const tardeColor = reg.fueraDeHorario ? "#f85149" : tipoInfo.color;
     return (
       <span
-        title={`${tipoInfo.full}: ${reg.hora?.slice(0,5)}${reg.fueraDeHorario ? " ⚠ Fuera de horario" : ""}${reg.esManual ? " (manual)" : ""}`}
+        title={`${tipoInfo.full}: ${reg.hora?.slice(0,5)}${reg.fueraDeHorario ? " ⚠ Fuera de horario" : ""}${reg.esManual ? " (manual)" : ""}${reg.fotoUrl ? " — clic para ver foto" : ""}`}
         style={{
           display: "inline-flex", alignItems: "center", gap: 2,
           background: tardeColor + "22", border: `1px solid ${tardeColor}`,
           color: tardeColor, borderRadius: 4, padding: "1px 5px",
-          fontSize: "0.68rem", fontWeight: 700, cursor: onClick ? "pointer" : "default",
+          fontSize: "0.68rem", fontWeight: 700, cursor: "pointer",
           fontFamily: "monospace",
         }}
         onClick={onClick}
       >
         {tipoInfo.label} <span style={{ opacity: 0.75 }}>{reg.hora?.slice(0,5)}</span>
+        {reg.fotoUrl && <span style={{ fontSize: "0.6rem", opacity: 0.8, marginLeft: 1 }}>📷</span>}
       </span>
     );
   }
@@ -284,6 +288,7 @@ const Eventos = () => {
   const [grupos,     setGrupos]     = useState([]);
   const [usuarios,   setUsuarios]   = useState([]);
   const [registros,  setRegistros]  = useState([]);
+  const [incidenciasMap, setIncidenciasMap] = useState({}); // { [usuarioId+fecha]: incidencia }
   const [cargando,   setCargando]   = useState(false);
   const [ultimoEvento, setUltimoEvento] = useState(null);
 
@@ -305,10 +310,11 @@ const Eventos = () => {
   const [pagina, setPagina] = useState(1);
 
   // Modal
-  const [modalCrear,  setModalCrear]  = useState(false);
-  const [modalEditar, setModalEditar] = useState(null);
-  const [errorForm,   setErrorForm]   = useState("");
-  const [guardando,   setGuardando]   = useState(false);
+  const [modalCrear,   setModalCrear]   = useState(false);
+  const [modalEditar,  setModalEditar]  = useState(null);
+  const [modalDetalle, setModalDetalle] = useState(null); // registro para ver detalle/foto
+  const [errorForm,    setErrorForm]    = useState("");
+  const [guardando,    setGuardando]    = useState(false);
   const [form, setForm] = useState({
     usuarioId: "", sucursalId: "", tipo: "entrada",
     fecha: hoy(), hora: ahora(), justificacion: "", motivoEdicionManual: "",
@@ -326,8 +332,26 @@ const Eventos = () => {
     setCargando(true);
     try {
       const fin = rango[rango.length - 1];
-      const lista = await getRegistros({ fechaInicio: semanaInicio, fechaFin: fin });
+      const [lista, listaInc] = await Promise.all([
+        getRegistros({ fechaInicio: semanaInicio, fechaFin: fin }),
+        getIncidencias({ estado: "aprobada" }).catch(() => []),
+      ]);
       setRegistros(lista);
+      // Construir mapa { "usuarioId|YYYY-MM-DD": incidencia } para incidencias aprobadas que cubren el día
+      const mapa = {};
+      listaInc.forEach((inc) => {
+        if (!inc.fechaIncidencia) return;
+        const inicio = new Date(inc.fechaIncidencia + "T12:00:00");
+        const fin_   = inc.fechaFin ? new Date(inc.fechaFin + "T12:00:00") : inicio;
+        // Iterar por cada día del rango de la incidencia
+        const cursor = new Date(inicio);
+        while (cursor <= fin_) {
+          const key = `${inc.usuarioId}|${cursor.toISOString().slice(0, 10)}`;
+          mapa[key] = inc;
+          cursor.setDate(cursor.getDate() + 1);
+        }
+      });
+      setIncidenciasMap(mapa);
     } finally {
       setCargando(false);
     }
@@ -600,11 +624,13 @@ const Eventos = () => {
 
                       {/* Columnas de días */}
                       {rango.map((dia) => {
-                        const regsDelDia = regIndex[emp.id]?.[dia] || {};
+                        const regsDelDia  = regIndex[emp.id]?.[dia] || {};
+                        const incActiva   = incidenciasMap[`${emp.id}|${dia}`];
                         return (
                           <td key={dia} style={{
                             padding: "8px 6px", textAlign: "center", verticalAlign: "middle",
                             borderLeft: dia === hoy() ? "2px solid var(--accent)" : "1px solid var(--border)",
+                            background: incActiva ? "rgba(239,68,68,0.05)" : undefined,
                           }}>
                             <div style={{ display: "flex", gap: 3, flexWrap: "wrap", justifyContent: "center" }}>
                               {TIPOS.map((t) => (
@@ -613,9 +639,24 @@ const Eventos = () => {
                                   reg={regsDelDia[t.val]}
                                   tipo={t.val}
                                   diaStr={dia}
-                                  onClick={puedeEditar && regsDelDia[t.val] ? () => abrirEditar(regsDelDia[t.val]) : undefined}
+                                  onClick={regsDelDia[t.val] ? () => setModalDetalle(regsDelDia[t.val]) : undefined}
                                 />
                               ))}
+                              {incActiva && (
+                                <span
+                                  title={`Incidencia: ${incActiva.tipoNombre || ""}`}
+                                  style={{
+                                    fontSize: 11,
+                                    background: "#a855f7",
+                                    color: "#fff",
+                                    borderRadius: 4,
+                                    padding: "1px 4px",
+                                    cursor: "default",
+                                  }}
+                                >
+                                  ⚠
+                                </span>
+                              )}
                             </div>
                           </td>
                         );
@@ -651,6 +692,112 @@ const Eventos = () => {
           )}
         </>
       )}
+
+      {/* ── Modal Detalle / Foto ────────────────────────────────────────────── */}
+      {modalDetalle && (() => {
+        const reg = modalDetalle;
+        const tipoInfo = TIPOS.find((t) => t.val === reg.tipo);
+        const emp = usuarios.find((u) => u.id === reg.usuarioId);
+        return (
+          <div className="modal-overlay" onClick={() => setModalDetalle(null)}>
+            <div className="modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>📋 Detalle del registro</h2>
+                <button className="modal-close" onClick={() => setModalDetalle(null)}>✕</button>
+              </div>
+              <div className="modal-body">
+                {/* Foto */}
+                {reg.fotoUrl ? (
+                  <div style={{ marginBottom: 16, borderRadius: 10, overflow: "hidden", background: "#000" }}>
+                    <img
+                      src={`${BASE_URL}${reg.fotoUrl}`}
+                      alt="Foto de registro"
+                      style={{ width: "100%", display: "block", maxHeight: 300, objectFit: "cover" }}
+                    />
+                  </div>
+                ) : (
+                  <div style={{
+                    marginBottom: 16, borderRadius: 10, padding: "28px 0",
+                    background: "var(--bg3)", border: "1px dashed var(--border)",
+                    textAlign: "center", color: "var(--text2)", fontSize: "0.85rem",
+                  }}>
+                    📷 Sin foto en este registro
+                  </div>
+                )}
+
+                {/* Info del registro */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 18px", marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text2)", textTransform: "uppercase", letterSpacing: 0.5 }}>Empleado</div>
+                    <div style={{ fontWeight: 600 }}>{emp ? `${emp.nombre} ${emp.apellido}` : reg.usuarioNombre || "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text2)", textTransform: "uppercase", letterSpacing: 0.5 }}>Tipo</div>
+                    <div style={{ fontWeight: 600, color: tipoInfo?.color }}>{tipoInfo?.full || reg.tipo}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text2)", textTransform: "uppercase", letterSpacing: 0.5 }}>Fecha</div>
+                    <div style={{ fontWeight: 600 }}>{reg.fecha}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text2)", textTransform: "uppercase", letterSpacing: 0.5 }}>Hora</div>
+                    <div style={{ fontWeight: 600 }}>{reg.hora?.slice(0, 5)}</div>
+                  </div>
+                </div>
+
+                {/* Badges de estado */}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                  {reg.fueraDeHorario && (
+                    <span style={{ background: "#f8514922", border: "1px solid #f85149", color: "#f85149", borderRadius: 4, padding: "2px 8px", fontSize: "0.75rem", fontWeight: 600 }}>
+                      ⚠️ Fuera de horario
+                    </span>
+                  )}
+                  {reg.fueraDeGeocerca && (
+                    <span style={{ background: "#d2992222", border: "1px solid #d29922", color: "#d29922", borderRadius: 4, padding: "2px 8px", fontSize: "0.75rem", fontWeight: 600 }}>
+                      📍 Fuera de geocerca
+                    </span>
+                  )}
+                  {reg.esManual && (
+                    <span style={{ background: "#388bfd22", border: "1px solid #388bfd", color: "#388bfd", borderRadius: 4, padding: "2px 8px", fontSize: "0.75rem", fontWeight: 600 }}>
+                      ✏️ Manual
+                    </span>
+                  )}
+                </div>
+
+                {/* Motivos */}
+                {reg.motivoFueraHorario && (
+                  <div style={{ marginBottom: 8, fontSize: "0.82rem", background: "var(--bg3)", borderRadius: 6, padding: "8px 10px" }}>
+                    <strong>Motivo fuera de horario:</strong> {reg.motivoFueraHorario}
+                  </div>
+                )}
+                {reg.motivoFueraGeocerca && (
+                  <div style={{ marginBottom: 8, fontSize: "0.82rem", background: "var(--bg3)", borderRadius: 6, padding: "8px 10px" }}>
+                    <strong>Motivo fuera de geocerca:</strong> {reg.motivoFueraGeocerca}
+                  </div>
+                )}
+                {reg.justificacion && (
+                  <div style={{ marginBottom: 8, fontSize: "0.82rem", background: "var(--bg3)", borderRadius: 6, padding: "8px 10px" }}>
+                    <strong>Justificación:</strong> {reg.justificacion}
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="modal-footer" style={{ marginTop: 12 }}>
+                  <button className="btn btn-secondary" onClick={() => setModalDetalle(null)}>Cerrar</button>
+                  {puedeEditar && (
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => { setModalDetalle(null); abrirEditar(reg); }}
+                    >
+                      ✏️ Editar registro
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Modal Crear / Editar ────────────────────────────────────────────── */}
       {(modalCrear || modalEditar) && (

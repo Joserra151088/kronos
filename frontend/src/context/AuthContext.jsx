@@ -3,7 +3,7 @@
  */
 
 import { createContext, useContext, useState, useEffect } from "react";
-import { getMe, getMisModulos, login as apiLogin, logout as apiLogout } from "../utils/api";
+import { getMe, getMisModulos, login as apiLogin, logout as apiLogout, verifyLogin2FA as apiVerify2FA } from "../utils/api";
 import { SocketProvider, useSocket } from "./SocketContext";
 import { NotificacionesProvider } from "./NotificacionesContext";
 import { getModulesForUser } from "../utils/module-access";
@@ -22,6 +22,7 @@ const InnerProvider = ({ children, usuario }) => {
 export const AuthProvider = ({ children }) => {
   const [usuario, setUsuario] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [vistaActual, setVistaActual] = useState("admin"); // "admin" | "empleado"
 
   const cargarSesion = async () => {
     const perfil = await getMe();
@@ -58,13 +59,25 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const verifyLogin2FA = async (challengeId, code) => {
+    const data = await apiVerify2FA(challengeId, code);
+    if (data.token) {
+      const perfil = await cargarSesion();
+      setUsuario(perfil);
+    }
+    return data;
+  };
+
   const logout = () => {
     apiLogout();
     setUsuario(null);
   };
 
+  const toggleVista = () =>
+    setVistaActual((v) => (v === "admin" ? "empleado" : "admin"));
+
   return (
-    <AuthContext.Provider value={{ usuario, cargando, login, logout, setUsuario }}>
+    <AuthContext.Provider value={{ usuario, cargando, login, logout, verifyLogin2FA, setUsuario, vistaActual, setVistaActual, toggleVista }}>
       <SocketProvider usuario={usuario}>
         <InnerProvider usuario={usuario}>
           {children}

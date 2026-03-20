@@ -1,6 +1,6 @@
 /**
  * auditoria.routes.js
- * GET /api/auditoria — Solo super_admin puede ver el log.
+ * GET /api/auditoria — Solo super_admin y administrador_general pueden ver el log.
  */
 const express = require("express");
 const router  = express.Router();
@@ -9,7 +9,7 @@ const { verificarToken }      = require("../middleware/auth");
 const { requireRoles, ROLES } = require("../middleware/roles");
 
 router.use(verificarToken);
-router.use(requireRoles(ROLES.SUPER_ADMIN));
+router.use(requireRoles(ROLES.ADMINISTRADOR_GENERAL, ROLES.SUPER_ADMIN));
 
 /**
  * GET /api/auditoria

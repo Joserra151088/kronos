@@ -4,10 +4,44 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { actualizarUsuario, subirFotoEmpleado } from "../utils/api";
+import { actualizarUsuario, subirFotoEmpleado, get2FAStatus, setup2FA, confirm2FA, disable2FA } from "../utils/api";
+import { toastError } from "../utils/toast";
 
 const BASE = "http://localhost:4000";
 const API_BASE = "http://localhost:4000/api";
+
+// ─── Validación de contraseña ─────────────────────────────────────────────────
+const PWD_RULES = [
+  { id: "len",     label: "Mínimo 8 caracteres",            test: (p) => p.length >= 8 },
+  { id: "upper",   label: "Al menos una letra mayúscula",   test: (p) => /[A-Z]/.test(p) },
+  { id: "lower",   label: "Al menos una letra minúscula",   test: (p) => /[a-z]/.test(p) },
+  { id: "num",     label: "Al menos un número",             test: (p) => /[0-9]/.test(p) },
+  { id: "special", label: "Al menos un carácter especial",  test: (p) => /[!@#$%^&*()\-_=+[\]{};':"\\|,.<>/?`~]/.test(p) },
+];
+
+const PasswordStrength = ({ password }) => {
+  if (!password) return null;
+  const cumplidos = PWD_RULES.filter((r) => r.test(password)).length;
+  const porcentaje = (cumplidos / PWD_RULES.length) * 100;
+  const color = porcentaje < 40 ? "#ef4444" : porcentaje < 80 ? "#f59e0b" : "#22c55e";
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ height: 4, background: "var(--border)", borderRadius: 2, marginBottom: 8, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${porcentaje}%`, background: color, transition: "width 0.25s, background 0.25s", borderRadius: 2 }} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {PWD_RULES.map((r) => {
+          const ok = r.test(password);
+          return (
+            <span key={r.id} style={{ fontSize: 11, color: ok ? "#22c55e" : "#ef4444", display: "flex", alignItems: "center", gap: 5 }}>
+              {ok ? "✓" : "✗"} {r.label}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 // ─── API helpers (aclaraciones) ───────────────────────────────────────────────
 
@@ -413,6 +447,211 @@ function AclaracionHorario({ usuarioId }) {
   );
 }
 
+// ─── Sección 2FA ──────────────────────────────────────────────────────────────
+
+function Seguridad2FA() {
+  const [estado, setEstado] = useState(null); // { habilitado }
+  const [cargando, setCargando] = useState(true);
+
+  // Setup flow
+  const [setupData, setSetupData] = useState(null); // { secret, otpauthUrl }
+  const [code, setCode]           = useState("");
+  const [enviando, setEnviando]   = useState(false);
+  const [ok, setOk]               = useState("");
+  const [errMsg, setErrMsg]       = useState("");
+
+  // Disable flow
+  const [showDesactivar, setShowDesactivar] = useState(false);
+  const [codeDesactivar, setCodeDesactivar] = useState("");
+
+  const cargarEstado = useCallback(async () => {
+    try {
+      setCargando(true);
+      const data = await get2FAStatus();
+      setEstado(data);
+    } catch (e) {
+      setErrMsg(e.message);
+    } finally {
+      setCargando(false);
+    }
+  }, []);
+
+  useEffect(() => { cargarEstado(); }, [cargarEstado]);
+
+  const handleSetup = async () => {
+    setErrMsg(""); setOk("");
+    try {
+      const data = await setup2FA();
+      setSetupData(data); // { secret, otpauthUrl }
+      setCode("");
+    } catch (e) {
+      setErrMsg(e.message);
+    }
+  };
+
+  const handleConfirm = async (e) => {
+    e.preventDefault();
+    if (code.length !== 6) { setErrMsg("El código debe tener 6 dígitos"); return; }
+    setEnviando(true); setErrMsg(""); setOk("");
+    try {
+      await confirm2FA(code);
+      setSetupData(null);
+      setCode("");
+      setOk("✅ Autenticación de dos factores activada correctamente.");
+      await cargarEstado();
+    } catch (e) {
+      setErrMsg(e.message);
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const handleDesactivar = async (e) => {
+    e.preventDefault();
+    setEnviando(true); setErrMsg(""); setOk("");
+    try {
+      await disable2FA(codeDesactivar);
+      setShowDesactivar(false);
+      setCodeDesactivar("");
+      setOk("✅ Autenticación de dos factores desactivada.");
+      await cargarEstado();
+    } catch (e) {
+      setErrMsg(e.message);
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  if (cargando) return <div style={{ color: "var(--text2)", padding: "20px 0" }}>Cargando estado de 2FA…</div>;
+
+  return (
+    <div className="card">
+      <div style={{ padding: "20px 24px" }}>
+        <h3 style={{ marginBottom: 8 }}>🔐 Autenticación en Dos Factores (2FA)</h3>
+        <p style={{ color: "var(--text2)", fontSize: "0.9rem", marginBottom: 20 }}>
+          Añade una capa extra de seguridad a tu cuenta. Necesitarás una aplicación autenticadora
+          como <strong>Google Authenticator</strong> o <strong>Authy</strong>.
+        </p>
+
+        {errMsg && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{errMsg}</div>}
+        {ok     && <div className="alert alert-success" style={{ marginBottom: 16 }}>{ok}</div>}
+
+        {/* Estado actual */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "var(--bg3)", borderRadius: 8, marginBottom: 20, border: "1px solid var(--border)" }}>
+          <span style={{ fontSize: "1.5rem" }}>{estado?.habilitado ? "🟢" : "⚪"}</span>
+          <div>
+            <div style={{ fontWeight: 700 }}>
+              {estado?.habilitado ? "2FA Activado" : "2FA Desactivado"}
+            </div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text2)" }}>
+              {estado?.habilitado
+                ? "Tu cuenta está protegida con verificación en dos pasos."
+                : "Tu cuenta solo usa contraseña para iniciar sesión."}
+            </div>
+          </div>
+        </div>
+
+        {/* Configurar 2FA */}
+        {!estado?.habilitado && !setupData && (
+          <button className="btn btn-primary" onClick={handleSetup}>
+            🔑 Activar 2FA
+          </button>
+        )}
+
+        {/* QR + confirmar */}
+        {!estado?.habilitado && setupData && (
+          <div>
+            <div className="alert alert-info" style={{ marginBottom: 16 }}>
+              <strong>Paso 1:</strong> Escanea el código QR con tu aplicación autenticadora o ingresa el código manualmente.
+            </div>
+            {/* QR via Google Charts */}
+            <div style={{ textAlign: "center", margin: "16px 0" }}>
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupData.otpauthUri || setupData.otpauthUrl || "")}`}
+                alt="QR 2FA"
+                style={{ width: 200, height: 200, borderRadius: 8, border: "1px solid var(--border)" }}
+              />
+            </div>
+            <div style={{ background: "var(--bg3)", borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontFamily: "monospace", wordBreak: "break-all", fontSize: 14 }}>
+              <div style={{ fontSize: "0.78rem", color: "var(--text2)", marginBottom: 4 }}>Clave secreta (entrada manual):</div>
+              {setupData.secret}
+            </div>
+            <form onSubmit={handleConfirm}>
+              <div className="alert alert-info" style={{ marginBottom: 12 }}>
+                <strong>Paso 2:</strong> Ingresa el código de 6 dígitos que aparece en tu app para confirmar.
+              </div>
+              <div className="form-group">
+                <label>Código de verificación</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  className="form-control"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="000000"
+                  style={{ letterSpacing: "0.25em", fontSize: "1.2rem", textAlign: "center", maxWidth: 160 }}
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className="btn btn-secondary" onClick={() => { setSetupData(null); setCode(""); }}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={enviando || code.length !== 6}>
+                  {enviando ? "Verificando…" : "✅ Confirmar y activar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Desactivar 2FA */}
+        {estado?.habilitado && !showDesactivar && (
+          <button
+            className="btn btn-danger"
+            onClick={() => { setShowDesactivar(true); setCodeDesactivar(""); setErrMsg(""); }}
+          >
+            🔓 Desactivar 2FA
+          </button>
+        )}
+
+        {estado?.habilitado && showDesactivar && (
+          <form onSubmit={handleDesactivar}>
+            <div className="alert alert-warning" style={{ marginBottom: 12 }}>
+              Para desactivar el 2FA, confirma con un código actual de tu aplicación autenticadora.
+            </div>
+            <div className="form-group">
+              <label>Código de verificación actual</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                className="form-control"
+                value={codeDesactivar}
+                onChange={(e) => setCodeDesactivar(e.target.value.replace(/\D/g, ""))}
+                placeholder="000000"
+                style={{ letterSpacing: "0.25em", fontSize: "1.2rem", textAlign: "center", maxWidth: 160 }}
+                autoFocus
+              />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowDesactivar(false)}>
+                Cancelar
+              </button>
+              <button type="submit" className="btn btn-danger" disabled={enviando || codeDesactivar.length !== 6}>
+                {enviando ? "Desactivando…" : "Confirmar desactivación"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Componente principal Perfil ──────────────────────────────────────────────
 
 const Perfil = () => {
@@ -456,7 +695,7 @@ const Perfil = () => {
       const res = await subirFotoEmpleado(usuario.id, fotoFile);
       setUsuario({ ...usuario, fotoUrl: res.fotoUrl });
       setFotoFile(null);
-    } catch (err) { alert(err.message); }
+    } catch (err) { toastError(err); }
     finally { setSubiendoFoto(false); }
   };
 
@@ -475,8 +714,10 @@ const Perfil = () => {
     e.preventDefault();
     if (formPass.password !== formPass.confirmar)
       { setErrorPass("Las contraseñas no coinciden"); return; }
-    if (formPass.password.length < 6)
-      { setErrorPass("La contraseña debe tener al menos 6 caracteres"); return; }
+    // Validar reglas de contraseña
+    const reglasFallidas = PWD_RULES.filter((r) => !r.test(formPass.password));
+    if (reglasFallidas.length > 0)
+      { setErrorPass(`La contraseña no cumple: ${reglasFallidas.map(r => r.label).join(", ")}`); return; }
     setGuardandoPass(true); setErrorPass(""); setOkPass(false);
     try {
       await actualizarUsuario(usuario.id, { password: formPass.password });
@@ -525,6 +766,7 @@ const Perfil = () => {
       <div className="tabs" style={{ marginBottom: 20 }}>
         <button className={`tab-btn ${tab === "datos" ? "tab-active" : ""}`} onClick={() => setTab("datos")}>Datos personales</button>
         <button className={`tab-btn ${tab === "password" ? "tab-active" : ""}`} onClick={() => setTab("password")}>Contraseña</button>
+        <button className={`tab-btn ${tab === "seguridad" ? "tab-active" : ""}`} onClick={() => setTab("seguridad")}>🔐 Seguridad 2FA</button>
         <button className={`tab-btn ${tab === "registros" ? "tab-active" : ""}`} onClick={() => setTab("registros")}>Mis Registros</button>
         <button className={`tab-btn ${tab === "aclaraciones" ? "tab-active" : ""}`} onClick={() => setTab("aclaraciones")}>Aclaraciones</button>
       </div>
@@ -568,11 +810,31 @@ const Perfil = () => {
             {okPass    && <div className="alert alert-success" style={{ marginBottom: 14 }}>✅ Contraseña actualizada</div>}
             <div className="form-group">
               <label>Nueva contraseña *</label>
-              <input type="password" className="form-control" value={formPass.password} onChange={e => setFormPass({...formPass, password: e.target.value})} required minLength={6} />
+              <input
+                type="password"
+                className="form-control"
+                value={formPass.password}
+                onChange={e => setFormPass({...formPass, password: e.target.value})}
+                required
+                placeholder="Mín. 8 caracteres, mayúscula, número, especial"
+              />
+              <PasswordStrength password={formPass.password} />
             </div>
-            <div className="form-group">
+            <div className="form-group" style={{ marginTop: 12 }}>
               <label>Confirmar contraseña *</label>
-              <input type="password" className="form-control" value={formPass.confirmar} onChange={e => setFormPass({...formPass, confirmar: e.target.value})} required minLength={6} />
+              <input
+                type="password"
+                className="form-control"
+                value={formPass.confirmar}
+                onChange={e => setFormPass({...formPass, confirmar: e.target.value})}
+                required
+              />
+              {formPass.confirmar && formPass.password !== formPass.confirmar && (
+                <p style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}>✗ Las contraseñas no coinciden</p>
+              )}
+              {formPass.confirmar && formPass.password === formPass.confirmar && formPass.password && (
+                <p style={{ fontSize: 12, color: "#22c55e", marginTop: 4 }}>✓ Las contraseñas coinciden</p>
+              )}
             </div>
             <button type="submit" className="btn btn-primary" disabled={guardandoPass}>
               {guardandoPass ? "Actualizando…" : "🔒 Cambiar contraseña"}
@@ -580,6 +842,9 @@ const Perfil = () => {
           </form>
         </div>
       )}
+
+      {/* Seguridad 2FA */}
+      {tab === "seguridad" && <Seguridad2FA />}
 
       {/* Mis Registros */}
       {tab === "registros" && (

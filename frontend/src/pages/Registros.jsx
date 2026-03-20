@@ -19,6 +19,7 @@ import {
   crearRegistroManual, aprobarRegistro, rechazarRegistro, getUsuarios,
 } from "../utils/api";
 import { formatearMinutos } from "../utils/minutos";
+import { toastError, toastAviso, confirmar } from "../utils/toast";
 
 /** Roles que pueden ver el panel de gestión y crear registros manuales */
 const ROLES_GESTION = ["super_admin", "agente_soporte_ti", "supervisor_sucursales", "agente_control_asistencia"];
@@ -197,19 +198,19 @@ const Registros = () => {
   };
 
   const handleAprobar = async (id) => {
-    if (!window.confirm("¿Aprobar este registro manual?")) return;
+    if (!(await confirmar("¿Aprobar este registro manual?", "Confirmar", "warning"))) return;
     try { await aprobarRegistro(id); cargarManuales(); }
-    catch (err) { alert(err.message); }
+    catch (err) { toastError(err); }
   };
 
   const handleRechazar = async () => {
-    if (!motivoRechazo.trim()) { alert("Escribe un motivo de rechazo"); return; }
+    if (!motivoRechazo.trim()) { toastAviso("Escribe un motivo de rechazo"); return; }
     try {
       await rechazarRegistro(modalRechazo, motivoRechazo);
       setModalRechazo(null);
       setMotivoRechazo("");
       cargarManuales();
-    } catch (err) { alert(err.message); }
+    } catch (err) { toastError(err); }
   };
 
   // ── Render ────────────────────────────────────────────────────────────────

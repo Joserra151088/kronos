@@ -6,7 +6,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useEmpresa } from "../context/EmpresaContext";
 import {
@@ -14,14 +14,112 @@ import {
   getHorarios, crearHorario, actualizarHorario, eliminarHorario,
   getConfigRoles, updateConfigRol,
   getEmpresaConfig, updateEmpresaConfig, uploadLogoEmpresa, actualizarCamposPuesto,
+  getAnunciosAdmin, crearAnuncio, actualizarAnuncio, eliminarAnuncio,
+  getAreasAdmin, crearArea, actualizarArea, eliminarArea,
+  getGrupos, getUsuarios,
 } from "../utils/api";
+import { toastExito, toastError, confirmar } from "../utils/toast";
+
+// ─── Rich Text Editor ─────────────────────────────────────────────────────────
+/**
+ * Editor de texto enriquecido sin dependencias externas.
+ * Usa contentEditable + document.execCommand para formateo básico.
+ */
+const RichTextEditor = ({ initialValue = "", onChange, minHeight = 130 }) => {
+  const editorRef = useRef(null);
+
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = initialValue;
+    }
+  }, []); // solo al montar
+
+  const exec = useCallback((cmd, val = null) => {
+    editorRef.current?.focus();
+    document.execCommand(cmd, false, val);
+    if (onChange) onChange(editorRef.current?.innerHTML || "");
+  }, [onChange]);
+
+  const handleInput = () => {
+    if (onChange) onChange(editorRef.current?.innerHTML || "");
+  };
+
+  const btnStyle = (active = false) => ({
+    border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
+    background: active ? "color-mix(in srgb, var(--primary) 15%, var(--bg-card))" : "var(--bg-card)",
+    borderRadius: 4, padding: "3px 7px", cursor: "pointer",
+    fontSize: 13, color: "var(--text)", lineHeight: 1.4,
+  });
+
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
+      {/* Barra de herramientas */}
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: 4,
+        padding: "6px 8px", borderBottom: "1px solid var(--border)",
+        background: "var(--bg-secondary)",
+      }}>
+        <button type="button" title="Negrita" style={btnStyle()} onClick={() => exec("bold")}>
+          <strong>N</strong>
+        </button>
+        <button type="button" title="Cursiva" style={btnStyle()} onClick={() => exec("italic")}>
+          <em>I</em>
+        </button>
+        <button type="button" title="Subrayado" style={btnStyle()} onClick={() => exec("underline")}>
+          <u>S</u>
+        </button>
+        <div style={{ width: 1, background: "var(--border)", margin: "0 3px" }} />
+        <button type="button" title="Alinear izquierda" style={btnStyle()} onClick={() => exec("justifyLeft")}>⬅</button>
+        <button type="button" title="Centrar" style={btnStyle()} onClick={() => exec("justifyCenter")}>☰</button>
+        <button type="button" title="Alinear derecha" style={btnStyle()} onClick={() => exec("justifyRight")}>➡</button>
+        <div style={{ width: 1, background: "var(--border)", margin: "0 3px" }} />
+        <select
+          title="Tamaño de fuente"
+          style={{ ...btnStyle(), padding: "3px 4px" }}
+          defaultValue="3"
+          onChange={(e) => exec("fontSize", e.target.value)}
+        >
+          <option value="1">Pequeño</option>
+          <option value="2">Chico</option>
+          <option value="3">Normal</option>
+          <option value="4">Mediano</option>
+          <option value="5">Grande</option>
+          <option value="6">Más grande</option>
+          <option value="7">Máximo</option>
+        </select>
+        <div style={{ width: 1, background: "var(--border)", margin: "0 3px" }} />
+        <button type="button" title="Lista" style={btnStyle()} onClick={() => exec("insertUnorderedList")}>• Lista</button>
+        <button type="button" title="Limpiar formato" style={btnStyle()} onClick={() => exec("removeFormat")}>✖ Formato</button>
+      </div>
+
+      {/* Área de escritura */}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={handleInput}
+        style={{
+          minHeight, padding: "10px 12px",
+          outline: "none", fontSize: 14,
+          lineHeight: 1.6, color: "var(--text)",
+          background: "var(--bg-card)",
+        }}
+      />
+    </div>
+  );
+};
 
 const DIAS = [
   { val: 1, label: "Lun" }, { val: 2, label: "Mar" }, { val: 3, label: "Mié" },
   { val: 4, label: "Jue" }, { val: 5, label: "Vie" }, { val: 6, label: "Sáb" }, { val: 0, label: "Dom" },
 ];
 
-const FORM_PUESTO_VACIO = { nombre: "", descripcion: "", horarioId: "" };
+const FORM_PUESTO_VACIO  = { nombre: "", descripcion: "", horarioId: "", areaId: "" };
+const FORM_AREA_VACIO    = { nombre: "", descripcion: "" };
+const FORM_NOTIF_VACIO   = {
+  titulo: "", contenidoHtml: "", fechaInicio: "", fechaExpiracion: "",
+  destinatariosTodos: true, destinatariosGrupos: [], destinatariosUsuarios: [],
+};
 const FORM_HORARIO_VACIO = {
   nombre: "", horaEntrada: "08:00", horaSalida: "17:00",
   horaSalidaAlimentos: "", horaRegresoAlimentos: "",
@@ -29,23 +127,38 @@ const FORM_HORARIO_VACIO = {
 };
 
 const ROLES_SISTEMA = [
-  { key: "super_admin",               label: "Super Administrador" },
-  { key: "agente_soporte_ti",         label: "Agente Soporte TI" },
-  { key: "supervisor_sucursales",     label: "Supervisor de Sucursales" },
-  { key: "agente_control_asistencia", label: "Agente Control Asistencia" },
-  { key: "visor_reportes",            label: "Visor de Reportes" },
-  { key: "medico_titular",            label: "Médico Titular" },
-  { key: "medico_de_guardia",         label: "Médico de Guardia" },
+  { key: "administrador_general",     label: "Administrador General",
+    desc: "Acceso total al sistema. Gestiona licencias y configuración global." },
+  { key: "super_admin",               label: "Super Administrador",
+    desc: "Administración completa de la plataforma (usuarios, módulos, empresa)." },
+  { key: "agente_soporte_ti",         label: "Agente Soporte TI",
+    desc: "Soporte técnico con acceso a logs y configuración operativa." },
+  { key: "supervisor_sucursales",     label: "Supervisor de Sucursales",
+    desc: "Aprueba incidencias y monitorea asistencia de su sucursal." },
+  { key: "agente_control_asistencia", label: "Agente Control Asistencia",
+    desc: "Captura registros manuales y gestiona asistencia del personal." },
+  { key: "nominas",                   label: "Nóminas",
+    desc: "Consulta reportes de incidencias y horas trabajadas." },
+  { key: "visor_reportes",            label: "Visor de Reportes",
+    desc: "Solo lectura: reportes, dashboard y mapa." },
+  { key: "medico_titular",            label: "Médico Titular",
+    desc: "Registra su propia asistencia y solicita incidencias." },
+  { key: "medico_de_guardia",         label: "Médico de Guardia",
+    desc: "Registro de acceso en cualquier sucursal disponible." },
 ];
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-const Admin = () => {
+const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
   const { usuario } = useAuth();
   const { setEmpresa: setEmpresaGlobal, refreshEmpresa } = useEmpresa();
-  const esSuperAdmin = usuario?.rol === "super_admin";
+  const esSuperAdmin = ["super_admin", "administrador_general"].includes(usuario?.rol);
 
-  const [tab,       setTab]       = useState("puestos");
+  const [tab,       setTab]       = useState(defaultTab);
+  // Sync tab when defaultTab prop changes (e.g. navigating from /empresa → /puestos)
+  useEffect(() => { setTab(defaultTab); }, [defaultTab]);
+
   const [puestos,   setPuestos]   = useState([]);
+  const [areas,     setAreas]     = useState([]);
   const [horarios,  setHorarios]  = useState([]);
   const [modal,     setModal]     = useState(false);
   const [editando,  setEditando]  = useState(null);
@@ -71,10 +184,29 @@ const Admin = () => {
   const [logoPreview,     setLogoPreview]     = useState(null);
   const logoInputRef = useRef(null);
 
+  // Áreas
+  const [areaModal,      setAreaModal]      = useState(false);
+  const [areaEditando,   setAreaEditando]   = useState(null);
+  const [formArea,       setFormArea]       = useState(FORM_AREA_VACIO);
+  const [guardandoArea,  setGuardandoArea]  = useState(false);
+  const [areaError,      setAreaError]      = useState("");
+
+  // Notificaciones (anuncios)
+  const [notificaciones,     setNotificaciones]     = useState([]);
+  const [notifModal,         setNotifModal]         = useState(false);
+  const [notifEditando,      setNotifEditando]      = useState(null);
+  const [formNotif,          setFormNotif]          = useState(FORM_NOTIF_VACIO);
+  const [guardandoNotif,     setGuardandoNotif]     = useState(false);
+  const [notifError,         setNotifError]         = useState("");
+  // Listas para seleccionar destinatarios
+  const [notifGrupos,        setNotifGrupos]        = useState([]);
+  const [notifUsuarios,      setNotifUsuarios]      = useState([]);
+
   // ── Carga ───────────────────────────────────────────────────────────────────
   const cargar = () => {
     getPuestosAdmin().then(setPuestos).catch(() => {});
     getHorarios().then(setHorarios).catch(() => {});
+    getAreasAdmin().then(setAreas).catch(() => {});
     if (esSuperAdmin) {
       getEmpresaConfig().then(e => {
         setEmpresa({ nombre: e.nombre || "", razonSocial: e.razonSocial || "", rfc: e.rfc || "", domicilio: e.domicilio || "", telefono: e.telefono || "", email: e.email || "" });
@@ -93,8 +225,16 @@ const Admin = () => {
     } catch { /* silencioso */ } finally { setCargandoRoles(false); }
   };
 
+  const cargarNotificaciones = () => {
+    getAnunciosAdmin().then(setNotificaciones).catch(() => {});
+    // Cargar listas de destinatarios al abrir la pestaña (lazy)
+    if (notifGrupos.length === 0)   getGrupos().then(setNotifGrupos).catch(() => {});
+    if (notifUsuarios.length === 0) getUsuarios().then((u) => setNotifUsuarios(Array.isArray(u) ? u.filter((x) => x.activo) : [])).catch(() => {});
+  };
+
   useEffect(() => { cargar(); }, []);
   useEffect(() => { if (tab === "roles") cargarConfigRoles(); }, [tab]);
+  useEffect(() => { if (tab === "notificaciones") cargarNotificaciones(); }, [tab]);
 
   // ── Modal crear / editar ────────────────────────────────────────────────────
   const abrirModal = (item = null) => {
@@ -156,13 +296,14 @@ const Admin = () => {
     } catch (err) { setError(err.message); } finally { setGuardando(false); }
   };
 
-  const handleEliminar = async (id) => {
-    if (!window.confirm("¿Desactivar este elemento?")) return;
+  const handleEliminar = async (id, nombre) => {
+    const tipo = tab === "puestos" ? "puesto" : "horario";
+    if (!(await confirmar(`¿Eliminar ${tipo} "${nombre}"? Esta acción no se puede deshacer.`, "Eliminar", "danger"))) return;
     try {
       if (tab === "puestos") await eliminarPuesto(id);
       else                   await eliminarHorario(id);
       cargar();
-    } catch (err) { alert(err.message); }
+    } catch (err) { toastError(err); }
   };
 
   const toggleDia = (dia) => {
@@ -188,7 +329,7 @@ const Admin = () => {
   const guardarRol = async (rolKey) => {
     setGuardandoRol(rolKey);
     try { await updateConfigRol(rolKey, configRoles[rolKey] || []); }
-    catch (err) { alert(err.message); }
+    catch (err) { toastError(err); }
     finally { setGuardandoRol(null); }
   };
 
@@ -203,25 +344,58 @@ const Admin = () => {
           <h1 className="page-title">Administración</h1>
           <p className="page-subtitle">Puestos, horarios y configuración del sistema</p>
         </div>
-        {tab !== "roles" && tab !== "empresa" && (
+        {tab !== "roles" && tab !== "empresa" && tab !== "notificaciones" && tab !== "areas" && (
           <button className="btn btn-primary" onClick={() => abrirModal()}>
             + Nuevo {tab === "puestos" ? "Puesto" : "Horario"}
+          </button>
+        )}
+        {tab === "areas" && (
+          <button className="btn btn-primary" onClick={() => {
+            setAreaEditando(null);
+            setFormArea(FORM_AREA_VACIO);
+            setAreaError("");
+            setAreaModal(true);
+          }}>
+            + Nueva Área
+          </button>
+        )}
+        {tab === "notificaciones" && esSuperAdmin && (
+          <button className="btn btn-primary" onClick={() => {
+            setNotifEditando(null);
+            setFormNotif(FORM_NOTIF_VACIO);
+            setNotifError("");
+            setNotifModal(true);
+          }}>
+            + Nueva notificación
           </button>
         )}
       </div>
 
       {/* Tabs */}
       <div className="tabs" style={{ marginBottom: 20 }}>
-        <button className={`tab-btn ${tab === "puestos"  ? "tab-active" : ""}`} onClick={() => setTab("puestos")}>Puestos</button>
-        <button className={`tab-btn ${tab === "horarios" ? "tab-active" : ""}`} onClick={() => setTab("horarios")}>Horarios</button>
-        {esSuperAdmin && (
+        {/* Mostrar solo las pestañas permitidas (visibleTabs=null → todas) */}
+        {(!visibleTabs || visibleTabs.includes("puestos")) && (
+          <button className={`tab-btn ${tab === "puestos" ? "tab-active" : ""}`} onClick={() => setTab("puestos")}>💼 Puestos</button>
+        )}
+        {(!visibleTabs || visibleTabs.includes("areas")) && (
+          <button className={`tab-btn ${tab === "areas" ? "tab-active" : ""}`} onClick={() => setTab("areas")}>🏗️ Áreas</button>
+        )}
+        {(!visibleTabs || visibleTabs.includes("horarios")) && (
+          <button className={`tab-btn ${tab === "horarios" ? "tab-active" : ""}`} onClick={() => setTab("horarios")}>⏰ Horarios</button>
+        )}
+        {esSuperAdmin && (!visibleTabs || visibleTabs.includes("roles")) && (
           <button className={`tab-btn ${tab === "roles" ? "tab-active" : ""}`} onClick={() => setTab("roles")}>
             🔐 Roles
           </button>
         )}
-        {esSuperAdmin && (
+        {esSuperAdmin && (!visibleTabs || visibleTabs.includes("empresa")) && (
           <button className={`tab-btn ${tab === "empresa" ? "tab-active" : ""}`} onClick={() => setTab("empresa")}>
-            🏢 Empresa
+            🏛️ Empresa
+          </button>
+        )}
+        {esSuperAdmin && (!visibleTabs || visibleTabs.includes("notificaciones")) && (
+          <button className={`tab-btn ${tab === "notificaciones" ? "tab-active" : ""}`} onClick={() => setTab("notificaciones")}>
+            🔔 Notificaciones
           </button>
         )}
       </div>
@@ -252,7 +426,7 @@ const Admin = () => {
               </div>
               <div className="card-footer">
                 <button className="btn btn-sm btn-secondary" onClick={() => abrirModal(p)}>✏️ Editar</button>
-                <button className="btn btn-sm btn-danger"    onClick={() => handleEliminar(p.id)}>Desactivar</button>
+                <button className="btn btn-sm btn-danger"    onClick={() => handleEliminar(p.id, p.nombre)}>🗑️ Eliminar</button>
               </div>
             </div>
           ))}
@@ -288,7 +462,7 @@ const Admin = () => {
               </div>
               <div className="card-footer">
                 <button className="btn btn-sm btn-secondary" onClick={() => abrirModal(h)}>✏️ Editar</button>
-                <button className="btn btn-sm btn-danger"    onClick={() => handleEliminar(h.id)}>Desactivar</button>
+                <button className="btn btn-sm btn-danger"    onClick={() => handleEliminar(h.id, h.nombre)}>🗑️ Eliminar</button>
               </div>
             </div>
           ))}
@@ -378,7 +552,7 @@ const Admin = () => {
                     setEmpresaGlobal((prev) => ({ ...prev, ...r.empresa, logoUrl: r.logoUrl }));
                     await refreshEmpresa();
                     setLogoFile(null);
-                  } catch (err) { alert(err.message); }
+                  } catch (err) { toastError(err); }
                 }}>💾 Guardar logo</button>
               )}
             </div>
@@ -422,9 +596,9 @@ const Admin = () => {
                   const actualizada = await updateEmpresaConfig(empresa);
                   setEmpresaGlobal((prev) => ({ ...prev, ...actualizada }));
                   await refreshEmpresa();
-                  alert("✅ Empresa actualizada");
+                  toastExito("Empresa actualizada");
                 }
-                catch (err) { alert(err.message); }
+                catch (err) { toastError(err); }
                 finally { setGuardandoEmpresa(false); }
               }}
             >
@@ -433,6 +607,428 @@ const Admin = () => {
           </div>
         </div>
       )}
+
+      {/* ── Tab: Áreas ───────────────────────────────────────────────────────── */}
+      {tab === "areas" && (
+        <div>
+          <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+            Las áreas agrupan a los empleados por departamento o función. Se pueden asignar al crear o editar un empleado.
+          </p>
+          {areas.length === 0 && (
+            <div className="empty-state">
+              <div className="empty-icon">🏗️</div>
+              <p>No hay áreas registradas.</p>
+            </div>
+          )}
+          <div className="cards-grid">
+            {areas.filter((a) => a.activo !== false).map((area) => (
+              <div key={area.id} className="card">
+                <div className="card-body">
+                  <h3 style={{ margin: "0 0 6px" }}>🏗️ {area.nombre}</h3>
+                  {area.descripcion && (
+                    <p style={{ color: "var(--text-muted)", margin: "0 0 8px", fontSize: 13 }}>{area.descripcion}</p>
+                  )}
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                    👥 Empleados: <strong>{area.empleadosCount ?? 0}</strong>
+                  </p>
+                </div>
+                <div className="card-footer">
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    setAreaEditando(area);
+                    setFormArea({ nombre: area.nombre, descripcion: area.descripcion || "" });
+                    setAreaError("");
+                    setAreaModal(true);
+                  }}>✏️ Editar</button>
+                  <button className="btn btn-sm btn-danger" onClick={async () => {
+                    if (!(await confirmar(`¿Eliminar el área "${area.nombre}"? Los empleados asignados quedarán sin área.`, "Eliminar", "danger"))) return;
+                    try {
+                      await eliminarArea(area.id);
+                      cargar();
+                    } catch (err) { toastError(err); }
+                  }}>🗑️ Eliminar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Modal crear/editar área */}
+          {areaModal && (
+            <div className="modal-overlay" onClick={() => setAreaModal(false)}>
+              <div className="modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>{areaEditando ? "✏️ Editar Área" : "🏗️ Nueva Área"}</h2>
+                  <button className="modal-close" onClick={() => setAreaModal(false)}>✕</button>
+                </div>
+                <div className="modal-body">
+                  {areaError && <div className="alert alert-danger">{areaError}</div>}
+                  <div className="form-group">
+                    <label>Nombre del área *</label>
+                    <input
+                      className="form-control"
+                      value={formArea.nombre}
+                      onChange={(e) => setFormArea({ ...formArea, nombre: e.target.value })}
+                      placeholder="Ej: Recursos Humanos, Finanzas, TI..."
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Descripción</label>
+                    <textarea
+                      className="form-control"
+                      rows={2}
+                      value={formArea.descripcion}
+                      onChange={(e) => setFormArea({ ...formArea, descripcion: e.target.value })}
+                      placeholder="Descripción breve del área..."
+                    />
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button className="btn btn-secondary" onClick={() => setAreaModal(false)}>Cancelar</button>
+                  <button
+                    className="btn btn-primary"
+                    disabled={guardandoArea}
+                    onClick={async () => {
+                      if (!formArea.nombre.trim()) { setAreaError("El nombre es obligatorio."); return; }
+                      setGuardandoArea(true);
+                      setAreaError("");
+                      try {
+                        if (areaEditando) {
+                          await actualizarArea(areaEditando.id, formArea);
+                        } else {
+                          await crearArea(formArea);
+                        }
+                        setAreaModal(false);
+                        cargar();
+                      } catch (err) { setAreaError(err.message); }
+                      finally { setGuardandoArea(false); }
+                    }}
+                  >
+                    {guardandoArea ? "Guardando…" : "💾 Guardar"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Notificaciones ──────────────────────────────────────────────── */}
+      {tab === "notificaciones" && esSuperAdmin && (() => {
+        const hoy = new Date().toISOString().split("T")[0];
+        const getEstado = (n) => {
+          if (!n.activo) return { label: "Desactivada", color: "#6b7280" };
+          if (n.fechaInicio && n.fechaInicio > hoy) return { label: "Programada", color: "#f59e0b" };
+          if (n.fechaExpiracion && n.fechaExpiracion < hoy) return { label: "Vencida", color: "#ef4444" };
+          return { label: "Activa", color: "#22c55e" };
+        };
+
+        return (
+          <div>
+            <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+              Crea y programa notificaciones para el panel lateral. Puedes definir cuándo comienzan a mostrarse y cuándo vencen.
+            </p>
+
+            {notificaciones.length === 0 && (
+              <div className="empty-state">
+                <div className="empty-icon">🔔</div>
+                <p>No hay notificaciones registradas.</p>
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {notificaciones.map((n) => {
+                const estado = getEstado(n);
+                return (
+                  <div key={n.id} className="card" style={{ padding: "14px 18px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                          <strong style={{ fontSize: 15 }}>{n.titulo}</strong>
+                          <span style={{
+                            fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 600,
+                            background: estado.color + "22", color: estado.color, border: `1px solid ${estado.color}44`,
+                          }}>
+                            {estado.label}
+                          </span>
+                        </div>
+                        {/* Vista previa del contenido (texto plano) */}
+                        <div
+                          style={{ fontSize: 13, color: "var(--text-muted)", maxHeight: 40, overflow: "hidden", lineHeight: 1.4 }}
+                          dangerouslySetInnerHTML={{ __html: n.texto || n.contenidoHtml || "" }}
+                        />
+                        <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12, color: "var(--text-muted)", flexWrap: "wrap" }}>
+                          {n.fechaInicio && (
+                            <span>📅 Inicio: <strong>{n.fechaInicio}</strong></span>
+                          )}
+                          {n.fechaExpiracion && (
+                            <span>⏱ Vence: <strong>{n.fechaExpiracion}</strong></span>
+                          )}
+                          {n.creadoPorNombre && (
+                            <span>👤 {n.creadoPorNombre}</span>
+                          )}
+                          {n.destinatarios && !n.destinatarios.todos && (
+                            <span title="Anuncio dirigido a grupos/personas específicas">
+                              👥 {[
+                                n.destinatarios.grupos?.length   ? `${n.destinatarios.grupos.length} grupo(s)` : null,
+                                n.destinatarios.usuarios?.length ? `${n.destinatarios.usuarios.length} persona(s)` : null,
+                              ].filter(Boolean).join(", ")}
+                            </span>
+                          )}
+                          {(!n.destinatarios || n.destinatarios.todos) && (
+                            <span>🌐 Todos</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => {
+                            setNotifEditando(n);
+                            const dest = n.destinatarios;
+                            setFormNotif({
+                              titulo: n.titulo || "",
+                              contenidoHtml: n.texto || "",
+                              fechaInicio: n.fechaInicio || "",
+                              fechaExpiracion: n.fechaExpiracion || "",
+                              destinatariosTodos:    !dest || dest.todos === true,
+                              destinatariosGrupos:   dest?.grupos   || [],
+                              destinatariosUsuarios: dest?.usuarios || [],
+                            });
+                            setNotifError("");
+                            setNotifModal(true);
+                          }}
+                        >
+                          ✏️ Editar
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={async () => {
+                            if (!(await confirmar(`¿Eliminar la notificación "${n.titulo}"?`, "Eliminar", "danger"))) return;
+                            try {
+                              await eliminarAnuncio(n.id);
+                              cargarNotificaciones();
+                            } catch (err) { toastError(err); }
+                          }}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal crear/editar notificación */}
+            {notifModal && (
+              <div className="modal-overlay" onClick={() => setNotifModal(false)}>
+                <div
+                  className="modal"
+                  style={{ maxWidth: 640 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="modal-header">
+                    <h2>{notifEditando ? "✏️ Editar notificación" : "🔔 Nueva notificación"}</h2>
+                    <button className="modal-close" onClick={() => setNotifModal(false)}>✕</button>
+                  </div>
+
+                  <div className="modal-body">
+                    {notifError && <div className="alert alert-danger">{notifError}</div>}
+
+                    <div className="form-group">
+                      <label>Título *</label>
+                      <input
+                        className="form-control"
+                        value={formNotif.titulo}
+                        onChange={(e) => setFormNotif({ ...formNotif, titulo: e.target.value })}
+                        placeholder="Título de la notificación"
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Contenido *</label>
+                      <RichTextEditor
+                        key={notifEditando?.id || "new"}
+                        initialValue={formNotif.contenidoHtml}
+                        onChange={(html) => setFormNotif((prev) => ({ ...prev, contenidoHtml: html }))}
+                        minHeight={150}
+                      />
+                      <p className="form-hint">Usa la barra de herramientas para dar formato: negritas, cursiva, tamaño, alineación.</p>
+                    </div>
+
+                    <div className="form-row two-cols">
+                      <div className="form-group">
+                        <label>📅 Fecha de inicio (programar)</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={formNotif.fechaInicio}
+                          onChange={(e) => setFormNotif({ ...formNotif, fechaInicio: e.target.value })}
+                        />
+                        <p className="form-hint">Dejar vacío para publicar de inmediato.</p>
+                      </div>
+                      <div className="form-group">
+                        <label>⏱ Fecha de vencimiento</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={formNotif.fechaExpiracion}
+                          onChange={(e) => setFormNotif({ ...formNotif, fechaExpiracion: e.target.value })}
+                        />
+                        <p className="form-hint">Dejar vacío para duración de 7 días por defecto.</p>
+                      </div>
+                    </div>
+
+                    {/* ── Destinatarios ──────────────────────────────────────── */}
+                    <div className="form-group">
+                      <label>👥 Destinatarios</label>
+                      <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 14 }}>
+                          <input
+                            type="radio"
+                            name="destinatarios-tipo"
+                            checked={formNotif.destinatariosTodos}
+                            onChange={() => setFormNotif((f) => ({ ...f, destinatariosTodos: true, destinatariosGrupos: [], destinatariosUsuarios: [] }))}
+                          />
+                          Todos
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 14 }}>
+                          <input
+                            type="radio"
+                            name="destinatarios-tipo"
+                            checked={!formNotif.destinatariosTodos}
+                            onChange={() => setFormNotif((f) => ({ ...f, destinatariosTodos: false }))}
+                          />
+                          Grupos / personas específicas
+                        </label>
+                      </div>
+
+                      {!formNotif.destinatariosTodos && (
+                        <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 14, background: "var(--bg3)" }}>
+                          {/* Grupos */}
+                          {notifGrupos.length > 0 && (
+                            <div style={{ marginBottom: 14 }}>
+                              <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--text2)" }}>🔗 Grupos</p>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {notifGrupos.map((g) => {
+                                  const sel = formNotif.destinatariosGrupos.includes(g.id);
+                                  return (
+                                    <button
+                                      key={g.id}
+                                      type="button"
+                                      onClick={() => setFormNotif((f) => ({
+                                        ...f,
+                                        destinatariosGrupos: sel
+                                          ? f.destinatariosGrupos.filter((id) => id !== g.id)
+                                          : [...f.destinatariosGrupos, g.id],
+                                      }))}
+                                      style={{
+                                        padding: "3px 10px", borderRadius: 14, fontSize: 12,
+                                        border: sel ? "2px solid var(--accent)" : "1px solid var(--border)",
+                                        background: sel ? "var(--accent)" : "var(--bg-card)",
+                                        color: sel ? "#fff" : "var(--text)",
+                                        cursor: "pointer", fontWeight: sel ? 700 : 400,
+                                      }}
+                                    >
+                                      {g.nombre}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Usuarios */}
+                          {notifUsuarios.length > 0 && (
+                            <div>
+                              <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--text2)" }}>👤 Personas</p>
+                              <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                                {notifUsuarios.map((u) => {
+                                  const sel = formNotif.destinatariosUsuarios.includes(u.id);
+                                  return (
+                                    <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", padding: "3px 6px", borderRadius: 5, background: sel ? "rgba(var(--accent-rgb,89,107,237),0.1)" : "transparent" }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={sel}
+                                        onChange={() => setFormNotif((f) => ({
+                                          ...f,
+                                          destinatariosUsuarios: sel
+                                            ? f.destinatariosUsuarios.filter((id) => id !== u.id)
+                                            : [...f.destinatariosUsuarios, u.id],
+                                        }))}
+                                        style={{ accentColor: "var(--accent)" }}
+                                      />
+                                      {u.nombre} {u.apellido}
+                                      <span style={{ color: "var(--text-muted)", fontSize: 11 }}>({u.rol})</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {formNotif.destinatariosGrupos.length === 0 && formNotif.destinatariosUsuarios.length === 0 && (
+                            <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>
+                              ⚠ Selecciona al menos un grupo o persona, o cambia a "Todos".
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="modal-footer">
+                    <button className="btn btn-secondary" onClick={() => setNotifModal(false)}>Cancelar</button>
+                    <button
+                      className="btn btn-primary"
+                      disabled={guardandoNotif}
+                      onClick={async () => {
+                        if (!formNotif.titulo.trim()) { setNotifError("El título es obligatorio."); return; }
+                        if (!formNotif.contenidoHtml.trim() || formNotif.contenidoHtml === "<br>") {
+                          setNotifError("El contenido no puede estar vacío."); return;
+                        }
+                        if (!formNotif.destinatariosTodos &&
+                            formNotif.destinatariosGrupos.length === 0 &&
+                            formNotif.destinatariosUsuarios.length === 0) {
+                          setNotifError("Selecciona al menos un destinatario, o marca la opción 'Todos'."); return;
+                        }
+                        setGuardandoNotif(true);
+                        setNotifError("");
+                        try {
+                          const destinatarios = formNotif.destinatariosTodos
+                            ? { todos: true }
+                            : { grupos: formNotif.destinatariosGrupos, usuarios: formNotif.destinatariosUsuarios };
+                          const payload = {
+                            titulo: formNotif.titulo.trim(),
+                            texto: formNotif.contenidoHtml,
+                            destinatarios,
+                            ...(formNotif.fechaExpiracion ? { fechaExpiracion: formNotif.fechaExpiracion } : {}),
+                            ...(formNotif.fechaInicio    ? { fechaInicio:    formNotif.fechaInicio }    : {}),
+                          };
+                          if (notifEditando) {
+                            await actualizarAnuncio(notifEditando.id, payload);
+                          } else {
+                            await crearAnuncio(payload);
+                          }
+                          setNotifModal(false);
+                          cargarNotificaciones();
+                        } catch (err) {
+                          setNotifError(err.message);
+                        } finally {
+                          setGuardandoNotif(false);
+                        }
+                      }}
+                    >
+                      {guardandoNotif ? "Guardando…" : "💾 Guardar"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Modal crear / editar ─────────────────────────────────────────────── */}
       {modal && (
@@ -508,6 +1104,16 @@ const Admin = () => {
                   ))}
                 </div>
 
+                <div className="form-group">
+                  <label>Área / Departamento</label>
+                  <select className="form-control" value={formP.areaId || ""}
+                    onChange={(e) => setFormP({ ...formP, areaId: e.target.value })}>
+                    <option value="">Sin área asignada</option>
+                    {areas.filter((a) => a.activo !== false).map((a) => (
+                      <option key={a.id} value={a.id}>{a.nombre}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="form-group">
                   <label>Horario por defecto</label>
                   <select className="form-control" value={formP.horarioId}

@@ -8,25 +8,40 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   getIncidencias, getTiposIncidencia, crearIncidencia,
-  aprobarIncidencia, rechazarIncidencia,
+  aprobarIncidencia, rechazarIncidencia, preAprobarIncidencia,
 } from "../utils/api";
 import FileUpload from "../components/FileUpload";
+import { toastError, toastAviso, confirmar } from "../utils/toast";
 
 /** Roles que ven el panel de gestión (todos los registros, tabs Por Aprobar / Todas) */
-const ROLES_GESTION    = ["super_admin", "agente_soporte_ti", "supervisor_sucursales", "agente_control_asistencia"];
+const ROLES_GESTION       = ["super_admin", "agente_soporte_ti", "supervisor_sucursales", "agente_control_asistencia", "nominas"];
 /** Roles que además pueden aprobar o rechazar incidencias */
-const ROLES_APROBACION = ["super_admin", "supervisor_sucursales"];
+const ROLES_APROBACION    = ["super_admin", "agente_soporte_ti", "supervisor_sucursales", "nominas"];
+/** Roles que pueden pre-aprobar */
+const ROLES_PRE_APROBACION = ["agente_control_asistencia", "super_admin", "agente_soporte_ti"];
 
 const ESTADO_BADGE = {
-  pendiente: "badge-warning",
-  aprobada: "badge-success",
-  rechazada: "badge-danger",
+  pendiente:    "badge-warning",
+  pre_aprobada: "badge-info",
+  aprobada:     "badge-success",
+  rechazada:    "badge-danger",
+};
+const ESTADO_LABEL = {
+  pendiente:    "Pendiente",
+  pre_aprobada: "Pre-aprobada",
+  aprobada:     "Aprobada",
+  rechazada:    "Rechazada",
 };
 
 const Incidencias = () => {
-  const { usuario } = useAuth();
-  const esGestion   = ROLES_GESTION.includes(usuario?.rol);
-  const esAprobador = ROLES_APROBACION.includes(usuario?.rol);
+  const { usuario, vistaActual } = useAuth();
+  const esVistaEmpleado = vistaActual === "empleado";
+  const esGestion      = ROLES_GESTION.includes(usuario?.rol) && !esVistaEmpleado;
+  const esAprobador    = ROLES_APROBACION.includes(usuario?.rol) && !esVistaEmpleado;
+  const esPreAprobador = ROLES_PRE_APROBACION.includes(usuario?.rol) && !esVistaEmpleado;
+
+  const puedeAprobar = (inc) =>
+    ROLES_APROBACION.includes(usuario?.rol) || inc.jefeInmediatoId === usuario?.id;
 
   const [incidencias, setIncidencias] = useState([]);
   const [tipos, setTipos] = useState([]);
@@ -35,7 +50,7 @@ const Incidencias = () => {
   const [modalNueva, setModalNueva] = useState(false);
   const [modalDetalle, setModalDetalle] = useState(null);
   const [comentario, setComentario] = useState("");
-  const [form, setForm] = useState({ tipoIncidenciaId: "", descripcion: "" });
+  const [form, setForm] = useState({ tipoIncidenciaId: "", descripcion: "", fechaIncidencia: "", fechaFin: "" });
   const [archivo, setArchivo] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState("");
@@ -61,16 +76,24 @@ const Incidencias = () => {
   const handleEnviar = async (e) => {
     e.preventDefault();
     if (!form.tipoIncidenciaId) { setError("Selecciona el tipo de incidencia"); return; }
+    // Validar archivo requerido según tipo de incidencia
+    const tipoSeleccionado = tipos.find((t) => t.id === form.tipoIncidenciaId);
+    if (tipoSeleccionado?.requiereArchivo && !archivo) {
+      setError("Este tipo de incidencia requiere adjuntar un documento de soporte.");
+      return;
+    }
     try {
       setEnviando(true);
       setError("");
       const fd = new FormData();
       fd.append("tipoIncidenciaId", form.tipoIncidenciaId);
       fd.append("descripcion", form.descripcion);
+      if (form.fechaIncidencia) fd.append("fechaIncidencia", form.fechaIncidencia);
+      if (form.fechaFin) fd.append("fechaFin", form.fechaFin);
       if (archivo) fd.append("archivo", archivo);
       await crearIncidencia(fd);
       setModalNueva(false);
-      setForm({ tipoIncidenciaId: "", descripcion: "" });
+      setForm({ tipoIncidenciaId: "", descripcion: "", fechaIncidencia: "", fechaFin: "" });
       setArchivo(null);
       cargar();
     } catch (e) {
@@ -80,25 +103,45 @@ const Incidencias = () => {
     }
   };
 
+  const handlePreAprobar = async (id) => {
+    if (!(await confirmar("¿Pre-aprobar esta incidencia?", "Confirmar", "warning"))) return;
+    try {
+      await preAprobarIncidencia(id, comentario);
+      setModalDetalle(null);
+      setComentario("");
+      cargar();
+    } catch (e) {
+      toastError(e);
+    }
+  };
+
   const handleAprobar = async (id) => {
-    if (!window.confirm("¿Aprobar esta incidencia?")) return;
-    await aprobarIncidencia(id, comentario);
-    setModalDetalle(null);
-    setComentario("");
-    cargar();
+    if (!(await confirmar("¿Aprobar esta incidencia?", "Confirmar", "warning"))) return;
+    try {
+      await aprobarIncidencia(id, comentario);
+      setModalDetalle(null);
+      setComentario("");
+      cargar();
+    } catch (e) {
+      toastError(e);
+    }
   };
 
   const handleRechazar = async (id) => {
-    if (!comentario.trim()) { alert("Escribe un motivo de rechazo"); return; }
-    await rechazarIncidencia(id, comentario);
-    setModalDetalle(null);
-    setComentario("");
-    cargar();
+    if (!comentario.trim()) { toastAviso("Escribe un motivo de rechazo"); return; }
+    try {
+      await rechazarIncidencia(id, comentario);
+      setModalDetalle(null);
+      setComentario("");
+      cargar();
+    } catch (e) {
+      toastError(e);
+    }
   };
 
   const listaFiltrada = incidencias.filter((inc) => {
     if (!esGestion) return true;
-    if (tab === "pendientes") return inc.estado === "pendiente";
+    if (tab === "pendientes") return inc.estado === "pendiente" || inc.estado === "pre_aprobada";
     return true;
   });
 
@@ -111,7 +154,7 @@ const Incidencias = () => {
             {esGestion ? "Gestión y aprobación de incidencias" : "Mis solicitudes de incidencia"}
           </p>
         </div>
-        {!esGestion && (
+        {(!esGestion || esVistaEmpleado) && (
           <button className="btn btn-primary" onClick={() => setModalNueva(true)}>
             + Nueva Incidencia
           </button>
@@ -123,9 +166,9 @@ const Incidencias = () => {
         <div className="tabs" style={{ marginBottom: 20 }}>
           <button className={`tab-btn ${tab === "pendientes" ? "tab-active" : ""}`} onClick={() => setTab("pendientes")}>
             Por Aprobar
-            {incidencias.filter(i => i.estado === "pendiente").length > 0 && (
+            {incidencias.filter(i => i.estado === "pendiente" || i.estado === "pre_aprobada").length > 0 && (
               <span className="badge badge-warning" style={{ marginLeft: 8 }}>
-                {incidencias.filter(i => i.estado === "pendiente").length}
+                {incidencias.filter(i => i.estado === "pendiente" || i.estado === "pre_aprobada").length}
               </span>
             )}
           </button>
@@ -143,7 +186,7 @@ const Incidencias = () => {
         <div className="empty-state">
           <div className="empty-icon">📋</div>
           <p>{esGestion ? "No hay incidencias pendientes" : "Aún no has registrado incidencias"}</p>
-          {!esGestion && <button className="btn btn-primary" onClick={() => setModalNueva(true)}>Registrar incidencia</button>}
+          {(!esGestion || esVistaEmpleado) && <button className="btn btn-primary" onClick={() => setModalNueva(true)}>Registrar incidencia</button>}
         </div>
       ) : (
         <div className="data-table-wrapper">
@@ -153,7 +196,7 @@ const Incidencias = () => {
                 <th>Tipo</th>
                 {esGestion && <th>Empleado</th>}
                 <th>Descripción</th>
-                <th>Fecha</th>
+                <th>Fecha incidencia</th>
                 <th>Estado</th>
                 <th>Evidencia</th>
                 <th>Acciones</th>
@@ -167,10 +210,14 @@ const Incidencias = () => {
                   <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {inc.descripcion || "—"}
                   </td>
-                  <td>{new Date(inc.creadoEn).toLocaleDateString("es-MX")}</td>
                   <td>
-                    <span className={`badge ${ESTADO_BADGE[inc.estado]}`}>
-                      {inc.estado.charAt(0).toUpperCase() + inc.estado.slice(1)}
+                    {inc.fechaIncidencia
+                      ? `${new Date(inc.fechaIncidencia + "T12:00:00").toLocaleDateString("es-MX")}${inc.fechaFin ? " – " + new Date(inc.fechaFin + "T12:00:00").toLocaleDateString("es-MX") : ""}`
+                      : new Date(inc.creadoEn).toLocaleDateString("es-MX")}
+                  </td>
+                  <td>
+                    <span className={`badge ${ESTADO_BADGE[inc.estado] || "badge-secondary"}`}>
+                      {ESTADO_LABEL[inc.estado] || inc.estado}
                     </span>
                   </td>
                   <td>
@@ -181,12 +228,12 @@ const Incidencias = () => {
                     ) : "—"}
                   </td>
                   <td>
-                    {esAprobador && inc.estado === "pendiente" ? (
+                    {(puedeAprobar(inc) || esPreAprobador) && (inc.estado === "pendiente" || inc.estado === "pre_aprobada") ? (
                       <button className="btn btn-sm btn-primary" onClick={() => { setModalDetalle(inc); setComentario(""); }}>
                         Revisar
                       </button>
                     ) : (
-                      <button className="btn btn-sm btn-secondary" onClick={() => setModalDetalle(inc)}>
+                      <button className="btn btn-sm btn-secondary" onClick={() => { setModalDetalle(inc); setComentario(""); }}>
                         Ver
                       </button>
                     )}
@@ -223,6 +270,27 @@ const Incidencias = () => {
                 </select>
                 <small style={{ color: "var(--text-muted)" }}>* Los marcados requieren adjuntar evidencia</small>
               </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Fecha de la incidencia</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={form.fechaIncidencia}
+                    onChange={(e) => setForm({ ...form, fechaIncidencia: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Fecha fin (multi-día)</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={form.fechaFin}
+                    min={form.fechaIncidencia}
+                    onChange={(e) => setForm({ ...form, fechaFin: e.target.value })}
+                  />
+                </div>
+              </div>
               <div className="form-group">
                 <label>Descripción</label>
                 <textarea
@@ -257,10 +325,25 @@ const Incidencias = () => {
               <div className="detail-grid">
                 <div className="detail-item"><label>Tipo</label><span>{modalDetalle.tipoNombre}</span></div>
                 {esGestion && <div className="detail-item"><label>Empleado</label><span>{modalDetalle.usuarioNombre}</span></div>}
-                <div className="detail-item"><label>Estado</label>
-                  <span className={`badge ${ESTADO_BADGE[modalDetalle.estado]}`}>{modalDetalle.estado}</span>
+                <div className="detail-item">
+                  <label>Estado</label>
+                  <span className={`badge ${ESTADO_BADGE[modalDetalle.estado] || "badge-secondary"}`}>
+                    {ESTADO_LABEL[modalDetalle.estado] || modalDetalle.estado}
+                  </span>
                 </div>
-                <div className="detail-item"><label>Fecha</label><span>{new Date(modalDetalle.creadoEn).toLocaleString("es-MX")}</span></div>
+                <div className="detail-item"><label>Registrada</label><span>{new Date(modalDetalle.creadoEn).toLocaleString("es-MX")}</span></div>
+                {modalDetalle.fechaIncidencia && (
+                  <div className="detail-item">
+                    <label>Fecha incidencia</label>
+                    <span>
+                      {new Date(modalDetalle.fechaIncidencia + "T12:00:00").toLocaleDateString("es-MX")}
+                      {modalDetalle.fechaFin ? " — " + new Date(modalDetalle.fechaFin + "T12:00:00").toLocaleDateString("es-MX") : ""}
+                    </span>
+                  </div>
+                )}
+                {esGestion && modalDetalle.jefeInmediatoNombre && (
+                  <div className="detail-item"><label>Jefe inmediato</label><span>{modalDetalle.jefeInmediatoNombre}</span></div>
+                )}
                 {modalDetalle.descripcion && (
                   <div className="detail-item detail-full"><label>Descripción</label><span>{modalDetalle.descripcion}</span></div>
                 )}
@@ -276,12 +359,28 @@ const Incidencias = () => {
                     )}
                   </div>
                 )}
+                {/* Historial de pre-aprobaciones */}
+                {Array.isArray(modalDetalle.preAprobaciones) && modalDetalle.preAprobaciones.length > 0 && (
+                  <div className="detail-item detail-full">
+                    <label>Historial de pre-aprobaciones</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                      {modalDetalle.preAprobaciones.map((pa, i) => (
+                        <div key={i} style={{ background: "var(--bg-secondary)", borderRadius: 6, padding: "6px 10px", fontSize: 13 }}>
+                          <strong>{pa.preAprobadoPorNombre || pa.preAprobadoPorId}</strong>
+                          {" — "}{new Date(pa.preAprobadoEn).toLocaleString("es-MX")}
+                          {pa.comentario && <div style={{ color: "var(--text-muted)", marginTop: 2 }}>{pa.comentario}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {modalDetalle.comentarioSupervisor && (
                   <div className="detail-item detail-full"><label>Comentario del supervisor</label><span>{modalDetalle.comentarioSupervisor}</span></div>
                 )}
               </div>
 
-              {esAprobador && modalDetalle.estado === "pendiente" && (
+              {(esPreAprobador || puedeAprobar(modalDetalle)) &&
+               (modalDetalle.estado === "pendiente" || modalDetalle.estado === "pre_aprobada") && (
                 <div className="form-group" style={{ marginTop: 16 }}>
                   <label>Comentario (requerido para rechazar)</label>
                   <textarea
@@ -296,7 +395,12 @@ const Incidencias = () => {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModalDetalle(null)}>Cerrar</button>
-              {esAprobador && modalDetalle.estado === "pendiente" && (
+              {esPreAprobador && modalDetalle.estado === "pendiente" && (
+                <button className="btn btn-warning" onClick={() => handlePreAprobar(modalDetalle.id)}>
+                  ✅ Pre-aprobar
+                </button>
+              )}
+              {puedeAprobar(modalDetalle) && (modalDetalle.estado === "pendiente" || modalDetalle.estado === "pre_aprobada") && (
                 <>
                   <button className="btn btn-danger"  onClick={() => handleRechazar(modalDetalle.id)}>Rechazar</button>
                   <button className="btn btn-success" onClick={() => handleAprobar(modalDetalle.id)}>Aprobar</button>
