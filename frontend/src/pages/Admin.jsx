@@ -155,6 +155,7 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
   const { setEmpresa: setEmpresaGlobal, refreshEmpresa } = useEmpresa();
   const queryClient = useQueryClient();
   const esSuperAdmin = ["super_admin", "administrador_general"].includes(usuario?.rol);
+  const puedeEditar  = usuario?.puedeEditar !== false;
 
   const [tab,       setTab]       = useState(defaultTab);
   // Sync tab when defaultTab prop changes (e.g. navigating from /empresa → /puestos)
@@ -180,7 +181,7 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
   const [rolesList,       setRolesList]       = useState([]);
   const [rolModal,        setRolModal]        = useState(false);
   const [rolEditando,     setRolEditando]     = useState(null);
-  const [formRol,         setFormRol]         = useState({ clave: "", nombre: "", descripcion: "" });
+  const [formRol,         setFormRol]         = useState({ clave: "", nombre: "", descripcion: "", puedeEditar: false });
   const [guardandoNuevoRol, setGuardandoNuevoRol] = useState(false);
   const [rolError,        setRolError]        = useState("");
 
@@ -361,8 +362,8 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
     setRolEditando(rol);
     setRolError("");
     setFormRol(rol
-      ? { clave: rol.clave, nombre: rol.nombre, descripcion: rol.descripcion || "" }
-      : { clave: "", nombre: "", descripcion: "" });
+      ? { clave: rol.clave, nombre: rol.nombre, descripcion: rol.descripcion || "", puedeEditar: !!rol.puede_editar }
+      : { clave: "", nombre: "", descripcion: "", puedeEditar: false });
     setRolModal(true);
   };
 
@@ -372,11 +373,15 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
     setRolError("");
     try {
       if (rolEditando) {
-        const actualizado = await actualizarRol(rolEditando.clave, { nombre: formRol.nombre, descripcion: formRol.descripcion });
+        const actualizado = await actualizarRol(rolEditando.clave, {
+          nombre: formRol.nombre,
+          descripcion: formRol.descripcion,
+          puede_editar: formRol.puedeEditar,
+        });
         setRolesList((prev) => prev.map((r) => r.clave === rolEditando.clave ? { ...r, ...actualizado } : r));
         toastExito("Rol actualizado correctamente");
       } else {
-        const nuevo = await crearRol(formRol);
+        const nuevo = await crearRol({ ...formRol, puede_editar: formRol.puedeEditar });
         setRolesList((prev) => [...prev, nuevo]);
         toastExito("Rol creado correctamente");
       }
@@ -411,12 +416,12 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
           <h1 className="page-title">Administración</h1>
           <p className="page-subtitle">Puestos, horarios y configuración del sistema</p>
         </div>
-        {tab !== "roles" && tab !== "empresa" && tab !== "notificaciones" && tab !== "areas" && (
+        {tab !== "roles" && tab !== "empresa" && tab !== "notificaciones" && tab !== "areas" && puedeEditar && (
           <button className="btn btn-primary" onClick={() => abrirModal()}>
             + Nuevo {tab === "puestos" ? "Puesto" : "Horario"}
           </button>
         )}
-        {tab === "areas" && (
+        {tab === "areas" && puedeEditar && (
           <button className="btn btn-primary" onClick={() => {
             setAreaEditando(null);
             setFormArea(FORM_AREA_VACIO);
@@ -426,7 +431,7 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
             + Nueva Área
           </button>
         )}
-        {tab === "notificaciones" && esSuperAdmin && (
+        {tab === "notificaciones" && esSuperAdmin && puedeEditar && (
           <button className="btn btn-primary" onClick={() => {
             setNotifEditando(null);
             setFormNotif(FORM_NOTIF_VACIO);
@@ -491,10 +496,12 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
                   </p>
                 )}
               </div>
-              <div className="card-footer">
-                <button className="btn btn-sm btn-secondary" onClick={() => abrirModal(p)}>✏️ Editar</button>
-                <button className="btn btn-sm btn-danger"    onClick={() => handleEliminar(p.id, p.nombre)}>🗑️ Eliminar</button>
-              </div>
+              {puedeEditar && (
+                <div className="card-footer">
+                  <button className="btn btn-sm btn-secondary" onClick={() => abrirModal(p)}>✏️ Editar</button>
+                  <button className="btn btn-sm btn-danger"    onClick={() => handleEliminar(p.id, p.nombre)}>🗑️ Eliminar</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -527,10 +534,12 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
                   ⏱ Tolerancia: {h.toleranciaMinutos} min
                 </p>
               </div>
-              <div className="card-footer">
-                <button className="btn btn-sm btn-secondary" onClick={() => abrirModal(h)}>✏️ Editar</button>
-                <button className="btn btn-sm btn-danger"    onClick={() => handleEliminar(h.id, h.nombre)}>🗑️ Eliminar</button>
-              </div>
+              {puedeEditar && (
+                <div className="card-footer">
+                  <button className="btn btn-sm btn-secondary" onClick={() => abrirModal(h)}>✏️ Editar</button>
+                  <button className="btn btn-sm btn-danger"    onClick={() => handleEliminar(h.id, h.nombre)}>🗑️ Eliminar</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -552,7 +561,7 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
                       Crea, edita y elimina roles. Los roles aparecen en la ficha del empleado.
                     </p>
                   </div>
-                  <button className="btn btn-primary btn-sm" onClick={() => abrirRolModal()}>+ Nuevo rol</button>
+                  {puedeEditar && <button className="btn btn-primary btn-sm" onClick={() => abrirRolModal()}>+ Nuevo rol</button>}
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -566,12 +575,18 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
                       background: "var(--bg3)", border: "1px solid var(--border)",
                     }}>
                       <div style={{ flex: 1 }}>
-                        <span style={{ fontWeight: 600, fontSize: "0.88rem" }}>{rol.nombre}</span>
-                        <code style={{ marginLeft: 8, fontSize: "0.75rem", color: "var(--text-muted)", background: "var(--bg-code, #1a1a2e)", padding: "1px 6px", borderRadius: 4 }}>{rol.clave}</code>
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: "0.88rem" }}>{rol.nombre}</span>
+                          <code style={{ fontSize: "0.75rem", color: "var(--text-muted)", background: "var(--bg-code, #1a1a2e)", padding: "1px 6px", borderRadius: 4 }}>{rol.clave}</code>
+                          {rol.puede_editar
+                            ? <span style={{ fontSize: "0.72rem", background: "color-mix(in srgb, var(--primary) 18%, transparent)", color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 35%, transparent)", borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>✏️ Puede editar</span>
+                            : <span style={{ fontSize: "0.72rem", background: "color-mix(in srgb, #ef4444 12%, transparent)", color: "#ef4444", border: "1px solid color-mix(in srgb, #ef4444 30%, transparent)", borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>👁️ Solo lectura</span>
+                          }
+                        </div>
                         {rol.descripcion && <div style={{ fontSize: "0.78rem", color: "var(--text2)", marginTop: 2 }}>{rol.descripcion}</div>}
                       </div>
-                      <button className="btn btn-sm" style={{ background: "none", border: "1px solid var(--border)" }} onClick={() => abrirRolModal(rol)}>✏️</button>
-                      <button className="btn btn-sm" style={{ background: "none", border: "1px solid var(--danger)", color: "var(--danger)" }} onClick={() => handleEliminarRol(rol)}>🗑️</button>
+                      {puedeEditar && <button className="btn btn-sm" style={{ background: "none", border: "1px solid var(--border)" }} onClick={() => abrirRolModal(rol)}>✏️</button>}
+                      {puedeEditar && <button className="btn btn-sm" style={{ background: "none", border: "1px solid var(--danger)", color: "var(--danger)" }} onClick={() => handleEliminarRol(rol)}>🗑️</button>}
                     </div>
                   ))}
                 </div>
@@ -633,7 +648,7 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
       {/* ── Modal: Crear / Editar rol ──────────────────────────────────────────── */}
       {rolModal && (
         <div className="modal-overlay" onClick={() => setRolModal(false)}>
-          <div className="modal-content" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{rolEditando ? "✏️ Editar rol" : "➕ Nuevo rol"}</h2>
               <button className="modal-close" onClick={() => setRolModal(false)}>✕</button>
@@ -679,6 +694,36 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
                   onChange={(e) => setFormRol((f) => ({ ...f, descripcion: e.target.value }))}
                 />
               </div>
+
+              {/* ── Permiso de edición ──────────────────────────────────────── */}
+              <div style={{
+                display: "flex", alignItems: "flex-start", gap: 12,
+                padding: "12px 14px", borderRadius: 8,
+                background: formRol.puedeEditar
+                  ? "color-mix(in srgb, var(--primary) 10%, var(--bg3))"
+                  : "var(--bg3)",
+                border: `1px solid ${formRol.puedeEditar ? "color-mix(in srgb, var(--primary) 40%, transparent)" : "var(--border)"}`,
+                cursor: "pointer", transition: "all 0.15s",
+              }} onClick={() => setFormRol((f) => ({ ...f, puedeEditar: !f.puedeEditar }))}>
+                <input
+                  type="checkbox"
+                  id="chk-puede-editar"
+                  checked={formRol.puedeEditar}
+                  onChange={(e) => setFormRol((f) => ({ ...f, puedeEditar: e.target.checked }))}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, accentColor: "var(--primary)", cursor: "pointer" }}
+                />
+                <div>
+                  <label htmlFor="chk-puede-editar" style={{ fontWeight: 600, fontSize: "0.88rem", cursor: "pointer", display: "block" }}>
+                    Puede editar registros
+                  </label>
+                  <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                    Los usuarios con este rol podrán crear, editar y eliminar registros en el sistema.
+                    Sin esta opción el rol tendrá acceso de solo lectura.
+                  </span>
+                </div>
+              </div>
+
               {rolError && <p style={{ color: "var(--danger)", fontSize: 13 }}>⚠️ {rolError}</p>}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button type="button" className="btn" onClick={() => setRolModal(false)}>Cancelar</button>

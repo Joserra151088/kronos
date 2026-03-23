@@ -21,7 +21,7 @@ router.get("/", async (req, res) => {
   try {
     if (DB_ENABLED && pool) {
       const [rows] = await pool.query(
-        `SELECT id, clave, nombre, descripcion, activo FROM roles WHERE activo = 1 ORDER BY nombre`
+        `SELECT id, clave, nombre, descripcion, activo, puede_editar FROM roles WHERE activo = 1 ORDER BY nombre`
       );
       return res.json(rows);
     }
@@ -38,13 +38,15 @@ router.get("/", async (req, res) => {
 
 // ── POST /api/roles ─────────────────────────────────────────────────────────────
 router.post("/", requireRoles(...SOLO_ADMINS), async (req, res) => {
-  const { clave, nombre, descripcion } = req.body;
+  const { clave, nombre, descripcion, puede_editar } = req.body;
   if (!clave || !nombre) return res.status(400).json({ error: "clave y nombre son obligatorios" });
 
   // clave solo letras/numeros/guiones bajos
   if (!/^[a-z_][a-z0-9_]{1,58}$/.test(clave)) {
     return res.status(400).json({ error: "La clave solo puede contener letras minúsculas, números y guiones bajos (ej: vendedor_senior)" });
   }
+
+  const puedeEditarVal = puede_editar ? 1 : 0;
 
   try {
     if (!DB_ENABLED || !pool) return res.status(503).json({ error: "Base de datos no disponible" });
@@ -53,11 +55,11 @@ router.post("/", requireRoles(...SOLO_ADMINS), async (req, res) => {
     if (existe.length > 0) return res.status(409).json({ error: "Ya existe un rol con esa clave" });
 
     await pool.query(
-      `INSERT INTO roles (clave, nombre, descripcion, activo, created_at, updated_at)
-       VALUES (?, ?, ?, 1, NOW(), NOW())`,
-      [clave, nombre, descripcion || null]
+      `INSERT INTO roles (clave, nombre, descripcion, activo, puede_editar, created_at, updated_at)
+       VALUES (?, ?, ?, 1, ?, NOW(), NOW())`,
+      [clave, nombre, descripcion || null, puedeEditarVal]
     );
-    return res.status(201).json({ clave, nombre, descripcion: descripcion || "", activo: 1 });
+    return res.status(201).json({ clave, nombre, descripcion: descripcion || "", activo: 1, puede_editar: puedeEditarVal });
   } catch (err) {
     console.error("[roles] POST /", err.message);
     return res.status(500).json({ error: "Error al crear rol" });
@@ -66,19 +68,21 @@ router.post("/", requireRoles(...SOLO_ADMINS), async (req, res) => {
 
 // ── PUT /api/roles/:clave ───────────────────────────────────────────────────────
 router.put("/:clave", requireRoles(...SOLO_ADMINS), async (req, res) => {
-  const { nombre, descripcion } = req.body;
+  const { nombre, descripcion, puede_editar } = req.body;
   if (!nombre) return res.status(400).json({ error: "nombre es obligatorio" });
+
+  const puedeEditarVal = puede_editar ? 1 : 0;
 
   try {
     if (!DB_ENABLED || !pool) return res.status(503).json({ error: "Base de datos no disponible" });
 
     const [result] = await pool.query(
-      `UPDATE roles SET nombre = ?, descripcion = ?, updated_at = NOW() WHERE clave = ?`,
-      [nombre, descripcion || null, req.params.clave]
+      `UPDATE roles SET nombre = ?, descripcion = ?, puede_editar = ?, updated_at = NOW() WHERE clave = ?`,
+      [nombre, descripcion || null, puedeEditarVal, req.params.clave]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: "Rol no encontrado" });
 
-    return res.json({ clave: req.params.clave, nombre, descripcion: descripcion || "" });
+    return res.json({ clave: req.params.clave, nombre, descripcion: descripcion || "", puede_editar: puedeEditarVal });
   } catch (err) {
     console.error("[roles] PUT /:clave", err.message);
     return res.status(500).json({ error: "Error al actualizar rol" });

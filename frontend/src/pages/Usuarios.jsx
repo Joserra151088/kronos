@@ -328,7 +328,7 @@ const Usuarios = () => {
   const rolActual = usuarioActual?.rol || "";
   const puedeVerTodos       = ROLES_VER_TODOS.includes(rolActual);
   const puedeVerCorporativo = ROLES_VER_CORPORATIVO.includes(rolActual);
-  const puedeGestionar      = ROLES_GESTIONAR.includes(rolActual);
+  const puedeGestionar      = ROLES_GESTIONAR.includes(rolActual) && (usuarioActual?.puedeEditar !== false);
 
   // El tab inicial depende del rol
   const tabInicial = puedeVerTodos ? "todos" : "sucursales";
@@ -765,7 +765,7 @@ const Usuarios = () => {
                         }}
                       >🔓 2FA</button>
                     )}
-                    {u.activo && ROLES_ELIMINAR.includes(rolActual) && u.id !== usuarioActual?.id && (
+                    {u.activo && ROLES_ELIMINAR.includes(rolActual) && u.id !== usuarioActual?.id && usuarioActual?.puedeEditar !== false && (
                       <button
                         className="btn btn-danger btn-xs"
                         onClick={() => handleEliminar(u.id, `${u.nombre} ${u.apellido}`)}

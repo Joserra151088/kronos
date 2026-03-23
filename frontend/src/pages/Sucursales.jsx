@@ -10,6 +10,7 @@
 import { useState, useEffect } from "react";
 import { getSucursales, crearSucursal, actualizarSucursal, eliminarSucursal } from "../utils/api";
 import { toastError, confirmar } from "../utils/toast";
+import { useAuth } from "../context/AuthContext";
 
 /** Estado inicial vacío para el formulario de sucursal */
 const FORM_VACIO = {
@@ -23,6 +24,9 @@ const FORM_VACIO = {
  * Listado y formulario de alta/edición de sucursales con configuración de geocerca.
  */
 const Sucursales = () => {
+  const { usuario } = useAuth();
+  const puedeEditar = usuario?.puedeEditar !== false;
+
   const [sucursales, setSucursales] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [modal, setModal] = useState(false);          // true = modal abierto
@@ -164,9 +168,11 @@ const Sucursales = () => {
           <h1>Sucursales</h1>
           <p className="subtitle">Gestión de ubicaciones y geocercas</p>
         </div>
-        <button className="btn btn-primary" onClick={abrirCrear}>
-          + Nueva sucursal
-        </button>
+        {puedeEditar && (
+          <button className="btn btn-primary" onClick={abrirCrear}>
+            + Nueva sucursal
+          </button>
+        )}
       </div>
 
       {/* Grid de tarjetas */}
@@ -208,10 +214,12 @@ const Sucursales = () => {
             </div>
 
             <div className="card-actions">
-              <button className="btn btn-secondary btn-sm" onClick={() => abrirEditar(s)}>
-                ✏️ Editar
-              </button>
-              {s.activa ? (
+              {puedeEditar && (
+                <button className="btn btn-secondary btn-sm" onClick={() => abrirEditar(s)}>
+                  ✏️ Editar
+                </button>
+              )}
+              {puedeEditar && (s.activa ? (
                 <button className="btn btn-warning btn-sm" onClick={() => handleDesactivar(s.id, s.nombre)}>
                   ⏸️ Desactivar
                 </button>
@@ -219,14 +227,16 @@ const Sucursales = () => {
                 <button className="btn btn-success btn-sm" onClick={() => handleReactivar(s.id)}>
                   ▶️ Activar
                 </button>
+              ))}
+              {puedeEditar && (
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => handleEliminar(s.id, s.nombre)}
+                  title="Eliminar permanentemente"
+                >
+                  🗑️ Eliminar
+                </button>
               )}
-              <button
-                className="btn btn-danger btn-sm"
-                onClick={() => handleEliminar(s.id, s.nombre)}
-                title="Eliminar permanentemente"
-              >
-                🗑️ Eliminar
-              </button>
             </div>
           </div>
         ))}
