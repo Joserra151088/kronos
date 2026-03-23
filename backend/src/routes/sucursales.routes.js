@@ -50,7 +50,7 @@ router.delete("/:id", requireRoles(ROLES.SUPER_ADMIN, ROLES.AGENTE_SOPORTE_TI), 
   }
   const ok = store.deleteSucursal(req.params.id);
   if (!ok) return res.status(404).json({ error: "Sucursal no encontrada" });
-  return res.json({ mensaje: "Sucursal desactivada correctamente" });
+  return res.json({ mensaje: "Sucursal eliminada correctamente" });
 });
 
 module.exports = router;

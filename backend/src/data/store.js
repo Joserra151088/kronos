@@ -663,7 +663,7 @@ const updateArea = (id, data) => {
 const deleteArea = (id) => {
   const idx = areas.findIndex((a) => a.id === id);
   if (idx === -1) return false;
-  areas[idx].activo = false;
+  areas.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -697,7 +697,7 @@ const updatePuesto = (id, data) => {
 const deletePuesto = (id) => {
   const idx = puestos.findIndex((p) => p.id === id);
   if (idx === -1) return false;
-  puestos[idx].activo = false;
+  puestos.splice(idx, 1);
   refreshLegacyPuestos();
   scheduleDatabaseSync();
   return true;
@@ -730,7 +730,7 @@ const updateHorario = (id, data) => {
 const deleteHorario = (id) => {
   const idx = horarios.findIndex((h) => h.id === id);
   if (idx === -1) return false;
-  horarios[idx].activo = false;
+  horarios.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -760,7 +760,7 @@ const updateSucursal = (id, data) => {
 const deleteSucursal = (id) => {
   const idx = sucursales.findIndex((s) => s.id === id);
   if (idx === -1) return false;
-  sucursales[idx].activa = false;
+  sucursales.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -818,7 +818,7 @@ const updateUsuario = (id, data) => {
 const deleteUsuario = (id) => {
   const idx = usuarios.findIndex((u) => u.id === id);
   if (idx === -1) return false;
-  usuarios[idx].activo = false;
+  usuarios.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -893,7 +893,7 @@ const updateGrupo = (id, data) => {
 const deleteGrupo = (id) => {
   const idx = grupos.findIndex((g) => g.id === id);
   if (idx === -1) return false;
-  grupos[idx].activo = false;
+  grupos.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -925,7 +925,7 @@ const updateTipoIncidencia = (id, data) => {
 const deleteTipoIncidencia = (id) => {
   const idx = tiposIncidencia.findIndex((t) => t.id === id);
   if (idx === -1) return false;
-  tiposIncidencia[idx].activo = false;
+  tiposIncidencia.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -1089,7 +1089,7 @@ const updateAnuncio = (id, data) => {
 const deleteAnuncio = (id) => {
   const idx = anuncios.findIndex((a) => a.id === id);
   if (idx === -1) return false;
-  anuncios[idx].activo = false;
+  anuncios.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -2369,7 +2369,7 @@ const updateDoCompetencia = (id, data) => {
 const deleteDoCompetencia = (id) => {
   const idx = doCompetencias.findIndex((c) => c.id === id);
   if (idx === -1) return false;
-  doCompetencias[idx].activo = false;
+  doCompetencias.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -2456,7 +2456,7 @@ const updateDoPlantilla1a1 = (id, data) => {
 const deleteDoPlantilla1a1 = (id) => {
   const idx = doPlantillas1a1.findIndex((p) => p.id === id);
   if (idx === -1) return false;
-  doPlantillas1a1[idx].activo = false;
+  doPlantillas1a1.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };
@@ -2500,7 +2500,7 @@ const updateDoIndicador = (id, data) => {
 const deleteDoIndicador = (id) => {
   const idx = doIndicadores.findIndex((i) => i.id === id);
   if (idx === -1) return false;
-  doIndicadores[idx].activo = false;
+  doIndicadores.splice(idx, 1);
   scheduleDatabaseSync();
   return true;
 };

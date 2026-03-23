@@ -30,6 +30,7 @@ const calendarioRoutes = require("./src/routes/calendario.routes");
 const vacacionesRoutes = require("./src/routes/vacaciones.routes");
 const areasRoutes = require("./src/routes/areas.routes");
 const doRoutes = require("./src/routes/do.routes");
+const rolesRoutes = require("./src/routes/roles.routes");
 const { auditarAccion } = require("./src/middleware/auditoria.middleware");
 const notifService = require("./src/services/notificaciones.service");
 const logsService  = require("./src/services/logs.service");
@@ -147,6 +148,7 @@ app.use("/api/calendario", calendarioRoutes);
 app.use("/api/vacaciones", vacacionesRoutes);
 app.use("/api/areas", areasRoutes);
 app.use("/api/do", doRoutes);
+app.use("/api/roles", rolesRoutes);
 app.get("/api/health", (req, res) =>
   res.json({
     status: "OK",

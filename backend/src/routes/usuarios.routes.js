@@ -385,7 +385,7 @@ router.delete("/:id", requireRoles(...ROLES_PUEDEN_ELIMINAR), (req, res) => {
   }
   const ok = store.deleteUsuario(req.params.id);
   if (!ok) return res.status(404).json({ error: "Usuario no encontrado" });
-  return res.json({ mensaje: "Usuario desactivado correctamente" });
+  return res.json({ mensaje: "Empleado eliminado correctamente" });
 });
 
 /**

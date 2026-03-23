@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { getUsuarios, getPuestos } from "../utils/api";
+import { confirmar, toastExito, toastError } from "../utils/toast";
 import {
   getDoCompetencias, crearDoCompetencia, actualizarDoCompetencia, eliminarDoCompetencia,
   getDoEvalCompetencias, crearDoEvalCompetencia,
@@ -170,7 +171,7 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
                       ✏️ Editar
                     </button>
                     <button className="btn btn-danger btn-sm" style={{ flex: 1 }}
-                      onClick={() => { if (window.confirm("¿Eliminar esta competencia?")) eliminarDoCompetencia(c.id).then(cargarComp); }}>
+                      onClick={async () => { if (await confirmar(`¿Eliminar la competencia "${c.nombre}"?`, "Eliminar")) { eliminarDoCompetencia(c.id).then(cargarComp); toastExito("Competencia eliminada"); } }}>
                       🗑️ Eliminar
                     </button>
                   </div>
@@ -208,7 +209,7 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
                 {ind.meta && <div style={{ fontSize: "0.8rem", marginTop: 6 }}>Meta: <strong>{ind.meta} {ind.unidad}</strong></div>}
                 {puedeAdmin && (
                   <button className="btn btn-danger btn-sm" style={{ marginTop: 8 }}
-                    onClick={() => { if (window.confirm("¿Eliminar?")) eliminarDoIndicador(ind.id).then(cargarInd); }}>
+                    onClick={async () => { if (await confirmar(`¿Eliminar el indicador "${ind.nombre}"?`, "Eliminar")) { eliminarDoIndicador(ind.id).then(cargarInd); toastExito("Indicador eliminado"); } }}>
                     Eliminar
                   </button>
                 )}
@@ -238,7 +239,7 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => { setFormPlantilla({ nombre: pl.nombre, descripcion: pl.descripcion || "", preguntas: pl.preguntas || [] }); setModalPlantilla(pl); }}>✏️ Editar</button>
-                      <button className="btn btn-danger btn-sm" onClick={async () => { if (window.confirm("¿Eliminar esta plantilla?")) { await eliminarDoPlantilla1a1(pl.id); getDoPlantillas1a1().then(setPlantillas); } }}>🗑️</button>
+                      <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmar(`¿Eliminar la plantilla "${pl.nombre}"?`, "Eliminar")) { await eliminarDoPlantilla1a1(pl.id); toastExito("Plantilla eliminada"); getDoPlantillas1a1().then(setPlantillas); } }}>🗑️</button>
                     </div>
                   </div>
                   {pl.preguntas?.length > 0 && (
@@ -481,8 +482,8 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
 
             {puedeAdmin && (
               <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 12 }}
-                onClick={() => {
-                  if (window.confirm("¿Restaurar preguntas predeterminadas para este tipo?")) {
+                onClick={async () => {
+                  if (await confirmar("¿Restaurar preguntas predeterminadas para este tipo? Se perderán los cambios actuales.", "Restaurar", "warning")) {
                     const updated = { ...preguntas360, [tipo360Activo]: PREGUNTAS_360_DEFAULT[tipo360Activo] };
                     setPreguntas360(updated); guardarPreguntas360(updated);
                   }

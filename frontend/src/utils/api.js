@@ -400,3 +400,10 @@ export const getDoPlantillas1a1 = () => request("/do/plantillas-1a1");
 export const crearDoPlantilla1a1 = (data) => request("/do/plantillas-1a1", { method: "POST", body: data });
 export const actualizarDoPlantilla1a1 = (id, data) => request(`/do/plantillas-1a1/${id}`, { method: "PUT", body: data });
 export const eliminarDoPlantilla1a1 = (id) => request(`/do/plantillas-1a1/${id}`, { method: "DELETE" });
+
+
+// ─── Roles ─────────────────────────────────────────────────────────────────────
+export const getRoles = () => request("/roles");
+export const crearRol = (data) => request("/roles", { method: "POST", body: data });
+export const actualizarRol = (clave, data) => request(`/roles/${clave}`, { method: "PUT", body: data });
+export const eliminarRol = (clave) => request(`/roles/${clave}`, { method: "DELETE" });

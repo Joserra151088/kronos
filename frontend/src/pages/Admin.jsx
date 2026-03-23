@@ -17,6 +17,7 @@ import {
   getAnunciosAdmin, crearAnuncio, actualizarAnuncio, eliminarAnuncio,
   getAreasAdmin, crearArea, actualizarArea, eliminarArea,
   getGrupos, getUsuarios,
+  getRoles, crearRol, actualizarRol, eliminarRol,
 } from "../utils/api";
 import { toastExito, toastError, confirmar } from "../utils/toast";
 
@@ -167,11 +168,19 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
   const [error,     setError]     = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  // Config de roles
+  // Config de roles (permisos por módulo)
   const [modulosSistema, setModulosSistema] = useState([]);
   const [configRoles,    setConfigRoles]    = useState({});
   const [cargandoRoles,  setCargandoRoles]  = useState(false);
   const [guardandoRol,   setGuardandoRol]   = useState(null);
+
+  // CRUD de roles (lista de roles del sistema)
+  const [rolesList,       setRolesList]       = useState([]);
+  const [rolModal,        setRolModal]        = useState(false);
+  const [rolEditando,     setRolEditando]     = useState(null);
+  const [formRol,         setFormRol]         = useState({ clave: "", nombre: "", descripcion: "" });
+  const [guardandoNuevoRol, setGuardandoNuevoRol] = useState(false);
+  const [rolError,        setRolError]        = useState("");
 
   // Campos adicionales del puesto
   const [camposEditando, setCamposEditando] = useState([]);
@@ -219,9 +228,10 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
     if (!esSuperAdmin) return;
     setCargandoRoles(true);
     try {
-      const data = await getConfigRoles();
+      const [data, roles] = await Promise.all([getConfigRoles(), getRoles().catch(() => [])]);
       setModulosSistema(data.modulos || []);
       setConfigRoles(data.config   || {});
+      setRolesList(Array.isArray(roles) ? roles : []);
     } catch { /* silencioso */ } finally { setCargandoRoles(false); }
   };
 
@@ -331,6 +341,50 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
     try { await updateConfigRol(rolKey, configRoles[rolKey] || []); }
     catch (err) { toastError(err); }
     finally { setGuardandoRol(null); }
+  };
+
+  // ── CRUD Roles ─────────────────────────────────────────────────────────────
+  const abrirRolModal = (rol = null) => {
+    setRolEditando(rol);
+    setRolError("");
+    setFormRol(rol
+      ? { clave: rol.clave, nombre: rol.nombre, descripcion: rol.descripcion || "" }
+      : { clave: "", nombre: "", descripcion: "" });
+    setRolModal(true);
+  };
+
+  const guardarNuevoRol = async (e) => {
+    e.preventDefault();
+    setGuardandoNuevoRol(true);
+    setRolError("");
+    try {
+      if (rolEditando) {
+        const actualizado = await actualizarRol(rolEditando.clave, { nombre: formRol.nombre, descripcion: formRol.descripcion });
+        setRolesList((prev) => prev.map((r) => r.clave === rolEditando.clave ? { ...r, ...actualizado } : r));
+        toastExito("Rol actualizado correctamente");
+      } else {
+        const nuevo = await crearRol(formRol);
+        setRolesList((prev) => [...prev, nuevo]);
+        toastExito("Rol creado correctamente");
+      }
+      setRolModal(false);
+    } catch (err) {
+      setRolError(err.message || "Error al guardar el rol");
+    } finally {
+      setGuardandoNuevoRol(false);
+    }
+  };
+
+  const handleEliminarRol = async (rol) => {
+    const ok = await confirmar(`¿Eliminar el rol "${rol.nombre}"?\n\nSolo se puede eliminar si ningún empleado tiene este rol asignado.`);
+    if (!ok) return;
+    try {
+      await eliminarRol(rol.clave);
+      setRolesList((prev) => prev.filter((r) => r.clave !== rol.clave));
+      toastExito("Rol eliminado correctamente");
+    } catch (err) {
+      toastError(err.message || "No se pudo eliminar el rol");
+    }
   };
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -474,13 +528,50 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
         cargandoRoles
           ? <div className="loading">Cargando configuración de roles…</div>
           : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <p style={{ color: "var(--text2)", fontSize: 13, margin: 0 }}>
-                Activa o desactiva los módulos que cada rol puede ver en el menú. Guarda los cambios por rol de forma independiente.
-              </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+
+              {/* ── Sección: Gestión de roles (CRUD) ──────────────────────── */}
+              <div className="card" style={{ padding: "20px 24px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1rem" }}>🔐 Roles del sistema</h2>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+                      Crea, edita y elimina roles. Los roles aparecen en la ficha del empleado.
+                    </p>
+                  </div>
+                  <button className="btn btn-primary btn-sm" onClick={() => abrirRolModal()}>+ Nuevo rol</button>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {rolesList.length === 0 && (
+                    <p style={{ color: "var(--text-muted)", fontSize: 13, fontStyle: "italic" }}>No hay roles registrados.</p>
+                  )}
+                  {rolesList.map((rol) => (
+                    <div key={rol.clave} style={{
+                      display: "flex", alignItems: "center", gap: 12,
+                      padding: "10px 14px", borderRadius: 8,
+                      background: "var(--bg3)", border: "1px solid var(--border)",
+                    }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 600, fontSize: "0.88rem" }}>{rol.nombre}</span>
+                        <code style={{ marginLeft: 8, fontSize: "0.75rem", color: "var(--text-muted)", background: "var(--bg-code, #1a1a2e)", padding: "1px 6px", borderRadius: 4 }}>{rol.clave}</code>
+                        {rol.descripcion && <div style={{ fontSize: "0.78rem", color: "var(--text2)", marginTop: 2 }}>{rol.descripcion}</div>}
+                      </div>
+                      <button className="btn btn-sm" style={{ background: "none", border: "1px solid var(--border)" }} onClick={() => abrirRolModal(rol)}>✏️</button>
+                      <button className="btn btn-sm" style={{ background: "none", border: "1px solid var(--danger)", color: "var(--danger)" }} onClick={() => handleEliminarRol(rol)}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Sección: Permisos por módulo ──────────────────────────── */}
+              <div>
+                <p style={{ color: "var(--text2)", fontSize: 13, marginBottom: 16 }}>
+                  Activa o desactiva los módulos que cada rol puede ver en el menú. Guarda los cambios por rol de forma independiente.
+                </p>
 
               {ROLES_SISTEMA.map((rol) => (
-                <div key={rol.key} className="card" style={{ padding: "16px 20px" }}>
+                <div key={rol.key} className="card" style={{ padding: "16px 20px", marginBottom: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                     <h3 style={{ margin: 0, fontSize: "0.95rem" }}>👤 {rol.label}</h3>
                     <button
@@ -521,8 +612,70 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
                   </div>
                 </div>
               ))}
+              </div>{/* fin sección permisos por módulo */}
             </div>
           )
+      )}
+
+      {/* ── Modal: Crear / Editar rol ──────────────────────────────────────────── */}
+      {rolModal && (
+        <div className="modal-overlay" onClick={() => setRolModal(false)}>
+          <div className="modal-content" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">{rolEditando ? "✏️ Editar rol" : "➕ Nuevo rol"}</h2>
+              <button className="modal-close" onClick={() => setRolModal(false)}>✕</button>
+            </div>
+            <form onSubmit={guardarNuevoRol} style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+              {!rolEditando && (
+                <div className="form-group">
+                  <label>Clave del rol *</label>
+                  <input
+                    className="form-control"
+                    placeholder="ej: vendedor_senior"
+                    value={formRol.clave}
+                    onChange={(e) => setFormRol((f) => ({ ...f, clave: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }))}
+                    required
+                  />
+                  <small style={{ color: "var(--text-muted)" }}>Solo minúsculas, números y guiones bajos. Ej: <code>vendedor_senior</code></small>
+                </div>
+              )}
+              {rolEditando && (
+                <div className="form-group">
+                  <label>Clave</label>
+                  <input className="form-control" value={formRol.clave} disabled style={{ opacity: 0.6 }} />
+                  <small style={{ color: "var(--text-muted)" }}>La clave no se puede cambiar</small>
+                </div>
+              )}
+              <div className="form-group">
+                <label>Nombre del rol *</label>
+                <input
+                  className="form-control"
+                  placeholder="ej: Vendedor Senior"
+                  value={formRol.nombre}
+                  onChange={(e) => setFormRol((f) => ({ ...f, nombre: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Descripción</label>
+                <textarea
+                  className="form-control"
+                  rows={3}
+                  placeholder="Describe las responsabilidades de este rol…"
+                  value={formRol.descripcion}
+                  onChange={(e) => setFormRol((f) => ({ ...f, descripcion: e.target.value }))}
+                />
+              </div>
+              {rolError && <p style={{ color: "var(--danger)", fontSize: 13 }}>⚠️ {rolError}</p>}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" className="btn" onClick={() => setRolModal(false)}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" disabled={guardandoNuevoRol}>
+                  {guardandoNuevoRol ? "Guardando…" : "💾 Guardar rol"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* ── Tab: Empresa ─────────────────────────────────────────────────────── */}

@@ -10,7 +10,7 @@ import {
   getUsuarios, getUsuariosPaginados, getPuestos, getSucursales, getHorarios,
   crearUsuario, actualizarUsuario, eliminarUsuario,
   subirFotoEmpleado, descargarPlantillaImportacion, importarUsuarios,
-  reset2FA, getAreas, verificarEmailDisponible,
+  reset2FA, getAreas, verificarEmailDisponible, getRoles,
 } from "../utils/api";
 import { getGrupos } from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -226,7 +226,7 @@ function calcularAntigüedad(fechaInicioActividades) {
 
 const BASE = "http://localhost:4000";
 
-const ROLES_DISPONIBLES = [
+const ROLES_DISPONIBLES_DEFAULT = [
   { value: "medico_titular",            label: "Médico Titular" },
   { value: "medico_de_guardia",         label: "Médico de Guardia" },
   { value: "supervisor_sucursales",     label: "Supervisor de Sucursales" },
@@ -235,6 +235,7 @@ const ROLES_DISPONIBLES = [
   { value: "visor_reportes",            label: "Visor de Reportes" },
   { value: "nominas",                   label: "Nóminas" },
   { value: "desarrollo_organizacional", label: "Desarrollo Organizacional" },
+  { value: "administrador_general",     label: "Administrador General" },
   { value: "super_admin",               label: "Super Administrador" },
 ];
 
@@ -297,6 +298,7 @@ const Usuarios = () => {
   const [grupos, setGrupos]         = useState([]);
   const [horarios, setHorarios]     = useState([]);
   const [areas, setAreas]           = useState([]);
+  const [rolesDisponibles, setRolesDisponibles] = useState(ROLES_DISPONIBLES_DEFAULT);
   const [modal, setModal]           = useState(false);
   const [editando, setEditando]     = useState(null);
   const [form, setForm]             = useState(FORM_VACIO);
@@ -385,6 +387,7 @@ const Usuarios = () => {
   const { data: gruposData     } = useQuery({ queryKey: ["grupos"],     queryFn: getGrupos,     staleTime: 10 * 60 * 1000 });
   const { data: horariosData   } = useQuery({ queryKey: ["horarios"],   queryFn: getHorarios,   staleTime: 10 * 60 * 1000 });
   const { data: areasData      } = useQuery({ queryKey: ["areas"],      queryFn: getAreas,      staleTime: 10 * 60 * 1000 });
+  const { data: rolesData      } = useQuery({ queryKey: ["roles"],      queryFn: getRoles,      staleTime: 5 * 60 * 1000 });
 
   useEffect(() => {
     if (puestosData)    setPuestos(Array.isArray(puestosData)    ? puestosData    : []);
@@ -392,7 +395,10 @@ const Usuarios = () => {
     if (gruposData)     setGrupos(Array.isArray(gruposData)     ? gruposData     : []);
     if (horariosData)   setHorarios(Array.isArray(horariosData)   ? horariosData   : []);
     if (areasData)      setAreas(Array.isArray(areasData)      ? areasData      : []);
-  }, [puestosData, sucursalesData, gruposData, horariosData, areasData]);
+    if (rolesData && Array.isArray(rolesData) && rolesData.length > 0) {
+      setRolesDisponibles(rolesData.map((r) => ({ value: r.clave, label: r.nombre })));
+    }
+  }, [puestosData, sucursalesData, gruposData, horariosData, areasData, rolesData]);
 
   const cargarDatos = () => {
     queryClient.invalidateQueries({ queryKey: ["usuarios"] });
@@ -593,11 +599,11 @@ const Usuarios = () => {
     }
   };
 
-  const handleEliminar = async (id) => {
-    if (!(await confirmar("¿Eliminar/desactivar este empleado? Esta acción no puede deshacerse fácilmente.", "Eliminar", "danger"))) return;
+  const handleEliminar = async (id, nombre) => {
+    if (!(await confirmar(`¿Eliminar permanentemente a "${nombre}"?\n\nEsta acción no se puede deshacer.`, "Eliminar", "danger"))) return;
     try {
       await eliminarUsuario(id);
-      toastExito("Empleado desactivado");
+      toastExito("Empleado eliminado correctamente");
       queryClient.invalidateQueries({ queryKey: ["usuarios"] });
     } catch (err) {
       toastError(err);
@@ -761,7 +767,7 @@ const Usuarios = () => {
                     {u.activo && ROLES_ELIMINAR.includes(rolActual) && u.id !== usuarioActual?.id && (
                       <button
                         className="btn btn-danger btn-xs"
-                        onClick={() => handleEliminar(u.id)}
+                        onClick={() => handleEliminar(u.id, `${u.nombre} ${u.apellido}`)}
                         title="Eliminar"
                       >🗑️</button>
                     )}
@@ -1096,7 +1102,7 @@ const Usuarios = () => {
                 <div className="form-group">
                   <label>Rol en el sistema *</label>
                   <select name="rol" value={form.rol} onChange={handleChange} required>
-                    {ROLES_DISPONIBLES.map((r) => (
+                    {rolesDisponibles.map((r) => (
                       <option key={r.value} value={r.value}>{r.label}</option>
                     ))}
                   </select>
