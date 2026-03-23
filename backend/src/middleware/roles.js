@@ -16,6 +16,7 @@ const ROLES = {
   MEDICO_TITULAR: "medico_titular",
   MEDICO_DE_GUARDIA: "medico_de_guardia",
   NOMINAS: "nominas",
+  DESARROLLO_ORGANIZACIONAL: "desarrollo_organizacional",
 };
 
 /** Todos los roles con acceso completo a la app (excepto solo-reportes y médicos) */

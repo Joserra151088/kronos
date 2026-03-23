@@ -330,6 +330,7 @@ router.put("/:id", async (req, res) => {
       ...(fechaInicioActividades !== undefined && { fechaInicioActividades: fechaInicioActividades || null }),
       ...(usaHorarioPuesto !== undefined && { usaHorarioPuesto: !!(usaHorarioPuesto === true || usaHorarioPuesto === "true" || usaHorarioPuesto === 1) }),
       ...(configDiasHorario !== undefined && { configDiasHorario: Array.isArray(configDiasHorario) ? configDiasHorario : null }),
+      ...(req.body.evaluacionesHabilitadas !== undefined && { evaluacionesHabilitadas: req.body.evaluacionesHabilitadas === true || req.body.evaluacionesHabilitadas === "true" }),
     };
     if (rol !== undefined && req.user.rol === ROLES.SUPER_ADMIN) camposPermitidos.rol = rol;
   }

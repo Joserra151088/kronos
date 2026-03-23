@@ -234,6 +234,7 @@ const ROLES_DISPONIBLES = [
   { value: "agente_soporte_ti",         label: "Agente Soporte TI" },
   { value: "visor_reportes",            label: "Visor de Reportes" },
   { value: "nominas",                   label: "Nóminas" },
+  { value: "desarrollo_organizacional", label: "Desarrollo Organizacional" },
   { value: "super_admin",               label: "Super Administrador" },
 ];
 
@@ -257,6 +258,7 @@ const FORM_VACIO = {
   datosExtra: {},
   jefeInmediatoId: "",
   area: "",
+  evaluacionesHabilitadas: true,
 };
 
 const SEXO_ICON = { masculino: "👨", femenino: "👩", otro: "🧑" };
@@ -271,6 +273,7 @@ const ROL_LABEL = {
   medico_titular: "Médico Titular",
   medico_de_guardia: "Médico Guardia",
   nominas: "Nóminas",
+  desarrollo_organizacional: "Desarrollo Org.",
 };
 
 // Roles que pueden ver todos los tabs
@@ -461,6 +464,7 @@ const Usuarios = () => {
       datosExtra:  u.datosExtra || {},
       jefeInmediatoId: u.jefeInmediatoId ?? "",
       area:           u.area ?? "",
+      evaluacionesHabilitadas: u.evaluacionesHabilitadas !== false,
     });
     setFotoPreview(u.fotoUrl ? `${BASE}${u.fotoUrl}` : null);
     setFotoFile(null);
@@ -1245,6 +1249,24 @@ const Usuarios = () => {
                   ))}
                 </div>
               )}
+
+              {/* Desarrollo Organizacional */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+                <p style={{ fontWeight: "600", marginBottom: "0.75rem", color: "var(--text2)", fontSize: "0.85rem" }}>
+                  🧠 Desarrollo Organizacional
+                </p>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={!!form.evaluacionesHabilitadas}
+                    onChange={(e) => setForm((prev) => ({ ...prev, evaluacionesHabilitadas: e.target.checked }))}
+                  />
+                  Habilitar evaluaciones para este empleado
+                </label>
+                <small style={{ color: "var(--text-muted)", display: "block", marginTop: 4 }}>
+                  Si está activo, el empleado aparecerá en la sección de Desarrollo Organizacional para recibir evaluaciones.
+                </small>
+              </div>
 
               <div className="modal-actions">
                 <button

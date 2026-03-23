@@ -343,6 +343,24 @@ let usuarios = [
     activo: true,
     creadoEn: new Date().toISOString(),
   },
+  // ── Desarrollo Organizacional ─────────────────────────────────────────────
+  {
+    id: newId(),
+    nombre: "Valeria",
+    apellido: "Herrera Díaz",
+    email: "valeria.herrera@empresa.com",
+    password: "123456",
+    sexo: "femenino",
+    edad: 32,
+    puestoId: puestos[0].id,
+    sucursalId: sucursales[0].id,
+    rol: "desarrollo_organizacional",
+    grupoId: null,
+    horarioId: horarios[0].id,
+    tipo: "corporativo",
+    activo: true,
+    creadoEn: new Date().toISOString(),
+  },
   // ── Administrador General del sistema ─────────────────────────────────────
   {
     id: "jose-ramon-estrada-0000-administrador",
@@ -417,11 +435,12 @@ const MODULOS_SISTEMA = [
   { key: "calendario",     label: "Calendario" },
   { key: "organigrama",    label: "Organigrama" },
   { key: "horarios",       label: "Horarios" },
+  { key: "desarrollo_organizacional", label: "Desarrollo Organizacional" },
 ];
 
 // Mapa rol → módulos permitidos (configurable desde el panel de Admin)
 let configuracionRoles = {
-  super_admin:                 ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","auditoria","logs","notificaciones","vacaciones","incapacidades","calendario","organigrama","horarios"],
+  super_admin:                 ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","auditoria","logs","notificaciones","vacaciones","incapacidades","calendario","organigrama","horarios","desarrollo_organizacional"],
   agente_soporte_ti:           ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","logs","notificaciones","vacaciones","incapacidades","calendario","organigrama","horarios"],
   supervisor_sucursales:       ["dashboard","eventos","incidencias","reportes","empleados","grupos","mapa","notificaciones","vacaciones","incapacidades","calendario","organigrama"],
   agente_control_asistencia:   ["dashboard","eventos","incidencias","notificaciones","vacaciones","incapacidades","calendario"],
@@ -429,6 +448,7 @@ let configuracionRoles = {
   medico_titular:              ["dashboard","incidencias","notificaciones"],
   medico_de_guardia:           ["dashboard","incidencias","notificaciones"],
   nominas:                     ["dashboard","incidencias","empleados","reportes","notificaciones","vacaciones","incapacidades","horarios"],
+  desarrollo_organizacional:   ["dashboard","desarrollo_organizacional","notificaciones"],
 };
 
 const ROLE_DEFINITIONS = {
@@ -440,6 +460,7 @@ const ROLE_DEFINITIONS = {
   medico_titular: "Medico Titular",
   medico_de_guardia: "Medico de Guardia",
   nominas: "Nóminas",
+  desarrollo_organizacional: "Desarrollo Organizacional",
 };
 
 // ─── Registros de acceso ──────────────────────────────────────────────────────
@@ -2303,6 +2324,211 @@ const persistDatabaseSnapshot = async () => {
   }
 };
 
+// ─── Desarrollo Organizacional ─────────────────────────────────────────────────
+
+// Catálogo de competencias
+let doCompetencias = [];
+
+// Evaluaciones por competencias
+let doEvalCompetencias = [];
+
+// Evaluaciones 360
+let doEval360 = [];
+
+// Evaluaciones 1 a 1
+let doEval1a1 = [];
+
+// Satisfacción de clientes
+let doSatisfaccion = [];
+
+// Indicadores estratégicos (definición, max 3 por puesto)
+let doIndicadores = [];
+
+// Valores de indicadores (resultados por periodo)
+let doIndicadoresValores = [];
+
+// Plantillas de sesiones 1 a 1
+let doPlantillas1a1 = [];
+
+// ── Competencias ──────────────────────────────────────────────────────────────
+const getDoCompetencias = () => doCompetencias.filter((c) => c.activo);
+const getDoCompetenciaById = (id) => doCompetencias.find((c) => c.id === id) || null;
+const createDoCompetencia = (data) => {
+  const nueva = { id: newId(), creadoEn: new Date().toISOString(), activo: true, ...data };
+  doCompetencias.push(nueva);
+  scheduleDatabaseSync();
+  return nueva;
+};
+const updateDoCompetencia = (id, data) => {
+  const idx = doCompetencias.findIndex((c) => c.id === id);
+  if (idx === -1) return null;
+  doCompetencias[idx] = { ...doCompetencias[idx], ...data };
+  scheduleDatabaseSync();
+  return doCompetencias[idx];
+};
+const deleteDoCompetencia = (id) => {
+  const idx = doCompetencias.findIndex((c) => c.id === id);
+  if (idx === -1) return false;
+  doCompetencias[idx].activo = false;
+  scheduleDatabaseSync();
+  return true;
+};
+
+// ── Evaluaciones por Competencias ─────────────────────────────────────────────
+const getDoEvalCompetencias = (filtros = {}) => {
+  let list = [...doEvalCompetencias];
+  if (filtros.evaluadoId) list = list.filter((e) => e.evaluadoId === filtros.evaluadoId);
+  if (filtros.periodo) list = list.filter((e) => e.periodo === filtros.periodo);
+  return list;
+};
+const getDoEvalCompetenciaById = (id) => doEvalCompetencias.find((e) => e.id === id) || null;
+const createDoEvalCompetencia = (data) => {
+  const nueva = { id: newId(), creadoEn: new Date().toISOString(), estado: "completada", ...data };
+  doEvalCompetencias.push(nueva);
+  scheduleDatabaseSync();
+  return nueva;
+};
+const updateDoEvalCompetencia = (id, data) => {
+  const idx = doEvalCompetencias.findIndex((e) => e.id === id);
+  if (idx === -1) return null;
+  doEvalCompetencias[idx] = { ...doEvalCompetencias[idx], ...data };
+  scheduleDatabaseSync();
+  return doEvalCompetencias[idx];
+};
+
+// ── Evaluaciones 360 ──────────────────────────────────────────────────────────
+const getDoEval360 = (filtros = {}) => {
+  let list = [...doEval360];
+  if (filtros.evaluadoId) list = list.filter((e) => e.evaluadoId === filtros.evaluadoId);
+  if (filtros.periodo) list = list.filter((e) => e.periodo === filtros.periodo);
+  return list;
+};
+const getDoEval360ById = (id) => doEval360.find((e) => e.id === id) || null;
+const createDoEval360 = (data) => {
+  const nueva = { id: newId(), creadoEn: new Date().toISOString(), ...data };
+  doEval360.push(nueva);
+  scheduleDatabaseSync();
+  return nueva;
+};
+const updateDoEval360 = (id, data) => {
+  const idx = doEval360.findIndex((e) => e.id === id);
+  if (idx === -1) return null;
+  doEval360[idx] = { ...doEval360[idx], ...data };
+  scheduleDatabaseSync();
+  return doEval360[idx];
+};
+
+// ── Evaluaciones 1 a 1 ────────────────────────────────────────────────────────
+const getDoEval1a1 = (filtros = {}) => {
+  let list = [...doEval1a1];
+  if (filtros.empleadoId) list = list.filter((e) => e.empleadoId === filtros.empleadoId);
+  return list;
+};
+const createDoEval1a1 = (data) => {
+  const nueva = { id: newId(), creadoEn: new Date().toISOString(), realizada: false, ...data };
+  doEval1a1.push(nueva);
+  scheduleDatabaseSync();
+  return nueva;
+};
+const updateDoEval1a1 = (id, data) => {
+  const idx = doEval1a1.findIndex((e) => e.id === id);
+  if (idx === -1) return null;
+  doEval1a1[idx] = { ...doEval1a1[idx], ...data };
+  scheduleDatabaseSync();
+  return doEval1a1[idx];
+};
+
+// ── Plantillas 1 a 1 ──────────────────────────────────────────────────────────
+const getDoPlantillas1a1 = () => doPlantillas1a1.filter((p) => p.activo !== false);
+const createDoPlantilla1a1 = (data) => {
+  const nueva = { id: newId(), creadoEn: new Date().toISOString(), activo: true, preguntas: [], ...data };
+  doPlantillas1a1.push(nueva);
+  scheduleDatabaseSync();
+  return nueva;
+};
+const updateDoPlantilla1a1 = (id, data) => {
+  const idx = doPlantillas1a1.findIndex((p) => p.id === id);
+  if (idx === -1) return null;
+  doPlantillas1a1[idx] = { ...doPlantillas1a1[idx], ...data };
+  scheduleDatabaseSync();
+  return doPlantillas1a1[idx];
+};
+const deleteDoPlantilla1a1 = (id) => {
+  const idx = doPlantillas1a1.findIndex((p) => p.id === id);
+  if (idx === -1) return false;
+  doPlantillas1a1[idx].activo = false;
+  scheduleDatabaseSync();
+  return true;
+};
+
+// ── Satisfacción de Clientes ──────────────────────────────────────────────────
+const getDoSatisfaccion = (filtros = {}) => {
+  let list = [...doSatisfaccion];
+  if (filtros.periodo) list = list.filter((s) => s.periodo === filtros.periodo);
+  return list;
+};
+const createDoSatisfaccion = (data) => {
+  const nueva = { id: newId(), creadoEn: new Date().toISOString(), ...data };
+  doSatisfaccion.push(nueva);
+  scheduleDatabaseSync();
+  return nueva;
+};
+
+// ── Indicadores Estratégicos ──────────────────────────────────────────────────
+const getDoIndicadores = (filtros = {}) => {
+  let list = doIndicadores.filter((i) => i.activo);
+  if (filtros.puestoId) list = list.filter((i) => i.puestoId === filtros.puestoId);
+  return list;
+};
+const getDoIndicadorById = (id) => doIndicadores.find((i) => i.id === id) || null;
+const createDoIndicador = (data) => {
+  // Validar máximo 3 por puesto
+  const existentes = doIndicadores.filter((i) => i.puestoId === data.puestoId && i.activo);
+  if (existentes.length >= 3) return null;
+  const nuevo = { id: newId(), creadoEn: new Date().toISOString(), activo: true, ...data };
+  doIndicadores.push(nuevo);
+  scheduleDatabaseSync();
+  return nuevo;
+};
+const updateDoIndicador = (id, data) => {
+  const idx = doIndicadores.findIndex((i) => i.id === id);
+  if (idx === -1) return null;
+  doIndicadores[idx] = { ...doIndicadores[idx], ...data };
+  scheduleDatabaseSync();
+  return doIndicadores[idx];
+};
+const deleteDoIndicador = (id) => {
+  const idx = doIndicadores.findIndex((i) => i.id === id);
+  if (idx === -1) return false;
+  doIndicadores[idx].activo = false;
+  scheduleDatabaseSync();
+  return true;
+};
+
+// ── Valores de Indicadores ────────────────────────────────────────────────────
+const getDoIndicadoresValores = (filtros = {}) => {
+  let list = [...doIndicadoresValores];
+  if (filtros.usuarioId) list = list.filter((v) => v.usuarioId === filtros.usuarioId);
+  if (filtros.indicadorId) list = list.filter((v) => v.indicadorId === filtros.indicadorId);
+  if (filtros.periodo) list = list.filter((v) => v.periodo === filtros.periodo);
+  return list;
+};
+const createDoIndicadorValor = (data) => {
+  // Upsert por indicadorId + usuarioId + periodo
+  const idx = doIndicadoresValores.findIndex(
+    (v) => v.indicadorId === data.indicadorId && v.usuarioId === data.usuarioId && v.periodo === data.periodo
+  );
+  if (idx !== -1) {
+    doIndicadoresValores[idx] = { ...doIndicadoresValores[idx], ...data, actualizadoEn: new Date().toISOString() };
+    scheduleDatabaseSync();
+    return doIndicadoresValores[idx];
+  }
+  const nuevo = { id: newId(), creadoEn: new Date().toISOString(), ...data };
+  doIndicadoresValores.push(nuevo);
+  scheduleDatabaseSync();
+  return nuevo;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exportaciones
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2421,4 +2647,34 @@ module.exports = {
   ID_TIPO_VACACIONES,
   ID_TIPO_INCAPACIDAD,
   ID_TIPO_INCAP_MAT,
+  // Desarrollo Organizacional
+  getDoCompetencias,
+  getDoCompetenciaById,
+  createDoCompetencia,
+  updateDoCompetencia,
+  deleteDoCompetencia,
+  getDoEvalCompetencias,
+  getDoEvalCompetenciaById,
+  createDoEvalCompetencia,
+  updateDoEvalCompetencia,
+  getDoEval360,
+  getDoEval360ById,
+  createDoEval360,
+  updateDoEval360,
+  getDoEval1a1,
+  createDoEval1a1,
+  updateDoEval1a1,
+  getDoSatisfaccion,
+  createDoSatisfaccion,
+  getDoIndicadores,
+  getDoIndicadorById,
+  createDoIndicador,
+  updateDoIndicador,
+  deleteDoIndicador,
+  getDoIndicadoresValores,
+  createDoIndicadorValor,
+  getDoPlantillas1a1,
+  createDoPlantilla1a1,
+  updateDoPlantilla1a1,
+  deleteDoPlantilla1a1,
 };

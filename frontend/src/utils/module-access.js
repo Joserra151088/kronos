@@ -30,6 +30,7 @@ const DEFAULT_MODULES_BY_ROLE = {
   visor_reportes: ["dashboard", "reportes", "mapa", "notificaciones"],
   medico_titular:   ["dashboard", "incidencias", "notificaciones"],
   medico_de_guardia: ["dashboard", "incidencias", "notificaciones"],
+  desarrollo_organizacional: ["dashboard", "desarrollo_organizacional", "notificaciones"],
 };
 
 export const getModulesForUser = (usuario) => {
