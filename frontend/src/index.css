@@ -2564,15 +2564,55 @@ input::placeholder { color: var(--text2); }
   width: 100%;
 }
 
-/* ── Responsive top nav ── */
-@media (max-width: 768px) {
-  .top-nav { height: 56px; }
-  .tnav-inner { padding: 0 14px; gap: 6px; }
-  .tnav-links { display: none; }
-  .tnav-hamburger { display: flex; }
-  .tnav-brand { display: none; }
-  .tnav-logout { display: none; }
-  .profile-chip-text { display: none; }
+/* ── Responsive top nav ─────────────────────────────────────────────────────
+   3 niveles:
+   ≥ 1300px   → nav completa  (default)
+   1024–1299px → nav compacta  (font/padding reducidos)
+   900–1023px  → nav muy compacta + sin brand text
+   < 900px    → hamburger + drawer
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Nivel 2 — compacta: 1024 a 1299px */
+@media (min-width: 1024px) and (max-width: 1299px) {
+  .tnav-inner  { padding: 0 16px; gap: 4px; }
+  .tnav-logo   { margin-right: 2px; }
+  .tnav-brand  { font-size: 0.88rem; }
+  .tnav-item   { font-size: 0.83rem; padding: 6px 10px; gap: 4px; letter-spacing: 0; }
+  .tnav-actions { gap: 4px; }
+}
+
+/* Nivel 3 — muy compacta: 900 a 1023px */
+@media (min-width: 900px) and (max-width: 1023px) {
+  .tnav-inner  { padding: 0 10px; gap: 2px; }
+  .tnav-logo   { margin-right: 0; }
+  .tnav-brand  { display: none; }
+  .tnav-item   { font-size: 0.78rem; padding: 5px 7px; gap: 3px; letter-spacing: 0; }
+  .tnav-actions { gap: 3px; }
+  .tnav-logo-img { width: 26px; height: 26px; }
+}
+
+/* Nivel 4 — drawer: < 900px */
+@media (max-width: 899px) {
+  .top-nav              { height: 56px; }
+  .tnav-inner           { padding: 0 14px; gap: 6px; }
+  .tnav-links           { display: none; }
+  .tnav-hamburger       { display: flex; }
+  .tnav-brand           { display: none; }
+  .tnav-logout          { display: none; }
+  .profile-chip-text    { display: none; }
+}
+
+/* Drawer táctil — ancho adaptivo según pantalla */
+@media (max-width: 899px) {
+  .mobile-nav-drawer {
+    width: min(300px, 85vw);
+  }
+}
+@media (max-width: 480px) {
+  .mobile-nav-drawer {
+    width: min(280px, 88vw);
+  }
+  .mobile-panel-btn { font-size: 1rem; padding: 6px 8px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -502,7 +502,7 @@ const Layout = () => {
 
   useEffect(() => {
     const handler = () => {
-      if (window.innerWidth >= 768) { setMobileOpen(false); setMobilePanelOpen(false); }
+      if (window.innerWidth >= 900) { setMobileOpen(false); setMobilePanelOpen(false); }
     };
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
