@@ -125,8 +125,9 @@ app.use((req, _res, next) => { logsService.incrementRequests(); next(); });
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Rate limiting granular para auth
-app.use("/api/auth/login", loginLimiter);
-app.use("/api/auth", authLimiter);
+// ⚠️  DESHABILITADO EN DESARROLLO — habilitar en producción
+// app.use("/api/auth/login", loginLimiter);
+// app.use("/api/auth", authLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/sucursales", sucursalesRoutes);
 app.use("/api/usuarios", usuariosRoutes);

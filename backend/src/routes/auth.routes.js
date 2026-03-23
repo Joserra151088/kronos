@@ -99,8 +99,9 @@ function getTOTPUri(secret, email, issuer = "Kronos") {
 // ─── Protección brute-force: bloqueo de cuenta por intentos fallidos ─────────
 // Map: email.toLowerCase() → { count: number, lockedUntil: timestamp|null }
 const loginAttempts = new Map();
-const LOCK_THRESHOLD    = 5;                // intentos fallidos antes de bloquear
-const LOCK_DURATION_MS  = 15 * 60 * 1000;  // 15 minutos de bloqueo
+// ⚠️  DESHABILITADO EN DESARROLLO — cambiar a 5 en producción
+const LOCK_THRESHOLD    = Infinity;         // sin bloqueo en desarrollo
+const LOCK_DURATION_MS  = 15 * 60 * 1000;  // 15 minutos de bloqueo (producción)
 
 /** Limpia entradas expiradas cada 30 minutos */
 setInterval(() => {

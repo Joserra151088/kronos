@@ -2624,6 +2624,10 @@ input::placeholder { color: var(--text2); }
   display: flex;
   overflow: hidden;
   position: relative;
+  /* Centrar y limitar ancho en pantallas muy anchas */
+  max-width: 1180px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .login-bg {
@@ -2635,12 +2639,12 @@ input::placeholder { color: var(--text2); }
 
 /* Panel izquierdo — brand (solo desktop) */
 .login-brand-panel {
-  flex: 0 0 48%;
+  flex: 0 0 44%;
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
-  padding: 48px 40px;
+  padding: 48px 32px 48px 48px;
   justify-content: space-between;
 }
 .login-brand-content {
@@ -2648,6 +2652,10 @@ input::placeholder { color: var(--text2); }
   display: flex;
   flex-direction: column;
   justify-content: center;
+  /* Empujar contenido hacia el formulario */
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: 0;
 }
 .login-brand-title {
   font-size: 4rem;
