@@ -44,23 +44,13 @@ function PrevitaInput({ id, type, value, onChange, placeholder, autoComplete, au
   );
 }
 
-const DEMO_USERS = [
-  { label: "👑 Super Admin",    email: "ana.garcia@empresa.com",       password: "123456" },
-  { label: "🔧 Soporte TI",     email: "luis.ramirez@empresa.com",     password: "123456" },
-  { label: "🏢 Supervisor",     email: "carlos.mendoza@empresa.com",   password: "123456" },
-  { label: "🩺 Médico Titular", email: "sofia.torres@empresa.com",     password: "123456" },
-  { label: "🩺 Médico Guardia", email: "maria.lopez@empresa.com",      password: "123456" },
-  { label: "📊 Control Asist.", email: "roberto.fuentes@empresa.com",  password: "123456" },
-  { label: "👁️ Visor",          email: "patricia.morales@empresa.com", password: "123456" },
-];
-
 const Login = () => {
   const { login, verifyLogin2FA } = useAuth();
   const { empresa } = useEmpresa();
   const navigate = useNavigate();
 
-  const [email, setEmail]       = useState("ana.garcia@empresa.com");
-  const [password, setPassword] = useState("123456");
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
   const [cargando, setCargando] = useState(false);
   const [bienvenido, setBienvenido] = useState(null);
@@ -303,32 +293,6 @@ const Login = () => {
             </div>
           )}
 
-          {/* Demo users */}
-          {!requires2FA && (
-            <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.15)" }}>
-              <p style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.45)", textAlign: "center", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                Acceso rápido (demo)
-              </p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                {DEMO_USERS.map((u) => (
-                  <button
-                    key={u.email}
-                    onClick={() => { setEmail(u.email); setPassword(u.password); setRequiresBranch(false); }}
-                    style={{
-                      padding: "7px 8px", background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8,
-                      fontSize: "0.72rem", color: "rgba(255,255,255,0.8)",
-                      cursor: "pointer", textAlign: "left", transition: "all 0.15s",
-                    }}
-                    onMouseOver={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.16)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; }}
-                    onMouseOut={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; }}
-                  >
-                    {u.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

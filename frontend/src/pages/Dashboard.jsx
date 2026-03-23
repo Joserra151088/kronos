@@ -343,120 +343,151 @@ const Dashboard = () => {
       </div>
 
       {/* Aviso de solo-hoy */}
-      <div className="alert alert-info" style={{ marginBottom: 16, fontSize: "0.85rem" }}>
+      <div className="alert alert-info" style={{ marginBottom: 20, fontSize: "0.85rem" }}>
         ℹ️ Los registros de asistencia sólo aplican para el día de <strong>hoy</strong>. No es posible registrar días anteriores o futuros.
       </div>
 
-      {/* Progreso del día */}
-      <div className="card">
-        <h2 className="card-title">Progreso del día</h2>
-        <div className="progress-bar-wrap">
-          <div className="progress-bar-fill" style={{ width: `${(progreso / 4) * 100}%` }} />
-        </div>
-        <p className="progress-text">{progreso} / 4 registros completados</p>
+      {/* ── Cuadrícula 2 columnas ─────────────────────────────────────────── */}
+      <div className="dashboard-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
 
-        <div className="timeline">
-          {ORDEN.map((tipo, i) => {
-            const reg = registrosHoy.find((r) => r.tipo === tipo);
-            const { label, icon } = ETIQUETAS[tipo];
-            return (
-              <div key={tipo} className={`timeline-item ${reg ? "done" : i === progreso ? "next" : "pending"}`}>
-                <div className="timeline-icon">{reg ? "✅" : icon}</div>
-                <div className="timeline-info">
-                  <span className="timeline-label">{label}</span>
-                  {reg && <span className="timeline-hora">{reg.hora?.slice(0,5)}</span>}
-                  {horario && !reg && i === progreso && (
-                    <span style={{ fontSize: "0.78rem", color: "var(--text2)" }}>
-                      esperado: {[horario.horaEntrada, horario.horaSalidaAlimentos, horario.horaRegresoAlimentos, horario.horaSalida][i] || "—"}
-                      {" "}±{horario.toleranciaMinutos ?? 10} min
-                    </span>
-                  )}
+        {/* Columna izquierda: Progreso */}
+        <div className="card" style={{ margin: 0 }}>
+          <h2 className="card-title">Progreso del día</h2>
+          <div className="progress-bar-wrap">
+            <div className="progress-bar-fill" style={{ width: `${(progreso / 4) * 100}%` }} />
+          </div>
+          <p className="progress-text">{progreso} / 4 registros completados</p>
+
+          <div className="timeline">
+            {ORDEN.map((tipo, i) => {
+              const reg = registrosHoy.find((r) => r.tipo === tipo);
+              const { label, icon } = ETIQUETAS[tipo];
+              return (
+                <div key={tipo} className={`timeline-item ${reg ? "done" : i === progreso ? "next" : "pending"}`}>
+                  <div className="timeline-icon">{reg ? "✅" : icon}</div>
+                  <div className="timeline-info">
+                    <span className="timeline-label">{label}</span>
+                    {reg && <span className="timeline-hora">{reg.hora?.slice(0,5)}</span>}
+                    {horario && !reg && i === progreso && (
+                      <span style={{ fontSize: "0.78rem", color: "var(--text2)" }}>
+                        esperado: {[horario.horaEntrada, horario.horaSalidaAlimentos, horario.horaRegresoAlimentos, horario.horaSalida][i] || "—"}
+                        {" "}±{horario.toleranciaMinutos ?? 10} min
+                      </span>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+
+        </div>
+
+        {/* Columna derecha: Acción de registro */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {siguienteRegistro ? (
+            <div className="card card-register" style={{ margin: 0 }}>
+              <h2 className="card-title">Siguiente registro</h2>
+              <div className="next-register">
+                <span className="next-icon">{ETIQUETAS[siguienteRegistro]?.icon}</span>
+                <span className="next-label">{ETIQUETAS[siguienteRegistro]?.label}</span>
               </div>
-            );
-          })}
+
+              {/* Selector de ubicación para médico de guardia */}
+              {esMedicoGuardia && (
+                <div className="medico-guardia-location" style={{ margin: "12px 0", padding: "12px 14px", background: "var(--bg3)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+                  <p style={{ fontWeight: 600, marginBottom: 8, fontSize: "0.9rem" }}>
+                    🏥 ¿Dónde te vas a reportar?
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "6px 8px", borderRadius: 6, background: ubicacionSeleccionada === "sesion" ? "var(--accent)" + "22" : "transparent", border: ubicacionSeleccionada === "sesion" ? "1px solid var(--accent)" : "1px solid transparent" }}>
+                      <input
+                        type="radio"
+                        name="ubicacion_guardia"
+                        value="sesion"
+                        checked={ubicacionSeleccionada === "sesion"}
+                        onChange={() => setUbicacionSeleccionada("sesion")}
+                      />
+                      🏛️ Corporativo {sucursal ? `(${sucursal.nombre})` : ""}
+                    </label>
+                    {todasSucursales.filter((s) => s.id !== usuario?.sucursalId).map((s) => (
+                      <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "6px 8px", borderRadius: 6, background: ubicacionSeleccionada === s.id ? "var(--accent)" + "22" : "transparent", border: ubicacionSeleccionada === s.id ? "1px solid var(--accent)" : "1px solid transparent" }}>
+                        <input
+                          type="radio"
+                          name="ubicacion_guardia"
+                          value={s.id}
+                          checked={ubicacionSeleccionada === s.id}
+                          onChange={() => setUbicacionSeleccionada(s.id)}
+                        />
+                        🏢 {s.nombre} — {s.ciudad}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {mensaje && (
+                <div className={`alert ${estado === "exito" ? "alert-success" : estado === "error" ? "alert-error" : "alert-info"}`}>
+                  {mensaje}
+                </div>
+              )}
+
+              <button
+                className="btn btn-primary btn-xl"
+                onClick={handleRegistrar}
+                disabled={estado === "obteniendo-gps" || estado === "registrando"}
+              >
+                {estado === "obteniendo-gps" && "📡 Obteniendo GPS…"}
+                {estado === "registrando" && "⏳ Registrando…"}
+                {(estado === "idle" || estado === "exito" || estado === "error") &&
+                  `Registrar ${ETIQUETAS[siguienteRegistro]?.label}`}
+              </button>
+
+              {(() => {
+                const sucursalActual = esMedicoGuardia && ubicacionSeleccionada !== "sesion"
+                  ? todasSucursales.find((s) => s.id === ubicacionSeleccionada)
+                  : sucursal;
+                return (
+                  <p className="geocerca-info">
+                    📍 Debes estar dentro de <strong>{sucursalActual?.geocerca?.radio || "…"}m</strong> de la sucursal para registrar.
+                  </p>
+                );
+              })()}
+            </div>
+          ) : (
+            progreso === 4 && (
+              <div className="card" style={{ margin: 0, textAlign: "center", padding: "32px 20px" }}>
+                <div style={{ fontSize: "3rem", marginBottom: 12 }}>🎉</div>
+                <h2 style={{ marginBottom: 8 }}>¡Jornada completa!</h2>
+                <p style={{ color: "var(--text2)" }}>Has completado los 4 registros del día. ¡Hasta mañana!</p>
+              </div>
+            )
+          )}
+
+          {/* Info de horario */}
+          {horario && (
+            <div className="card" style={{ margin: 0, padding: "16px 18px" }}>
+              <h3 style={{ margin: "0 0 10px", fontSize: "0.9rem", color: "var(--text2)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>🕐 Tu horario hoy</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { l: "Entrada", v: horario.horaEntrada },
+                  { l: "Salida a comer", v: horario.horaSalidaAlimentos },
+                  { l: "Regreso", v: horario.horaRegresoAlimentos },
+                  { l: "Salida final", v: horario.horaSalida },
+                ].map(({ l, v }) => v && (
+                  <div key={l} style={{ background: "var(--bg3)", borderRadius: 8, padding: "8px 12px" }}>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text2)" }}>{l}</div>
+                    <div style={{ fontWeight: 700, fontSize: "1rem" }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 8, fontSize: "0.78rem", color: "var(--text2)" }}>
+                Tolerancia: ±{horario.toleranciaMinutos ?? 10} min
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Botón de registro */}
-      {siguienteRegistro && (
-        <div className="card card-register">
-          <h2 className="card-title">Siguiente registro</h2>
-          <div className="next-register">
-            <span className="next-icon">{ETIQUETAS[siguienteRegistro]?.icon}</span>
-            <span className="next-label">{ETIQUETAS[siguienteRegistro]?.label}</span>
-          </div>
-
-          {/* Selector de ubicación para médico de guardia */}
-          {esMedicoGuardia && (
-            <div className="medico-guardia-location" style={{ margin: "12px 0", padding: "12px 14px", background: "var(--bg3)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
-              <p style={{ fontWeight: 600, marginBottom: 8, fontSize: "0.9rem" }}>
-                🏥 ¿Dónde te vas a reportar?
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "6px 8px", borderRadius: 6, background: ubicacionSeleccionada === "sesion" ? "var(--accent)" + "22" : "transparent", border: ubicacionSeleccionada === "sesion" ? "1px solid var(--accent)" : "1px solid transparent" }}>
-                  <input
-                    type="radio"
-                    name="ubicacion_guardia"
-                    value="sesion"
-                    checked={ubicacionSeleccionada === "sesion"}
-                    onChange={() => setUbicacionSeleccionada("sesion")}
-                  />
-                  🏛️ Corporativo {sucursal ? `(${sucursal.nombre})` : ""}
-                </label>
-                {todasSucursales.filter((s) => s.id !== usuario?.sucursalId).map((s) => (
-                  <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "6px 8px", borderRadius: 6, background: ubicacionSeleccionada === s.id ? "var(--accent)" + "22" : "transparent", border: ubicacionSeleccionada === s.id ? "1px solid var(--accent)" : "1px solid transparent" }}>
-                    <input
-                      type="radio"
-                      name="ubicacion_guardia"
-                      value={s.id}
-                      checked={ubicacionSeleccionada === s.id}
-                      onChange={() => setUbicacionSeleccionada(s.id)}
-                    />
-                    🏢 {s.nombre} — {s.ciudad}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {mensaje && (
-            <div className={`alert ${estado === "exito" ? "alert-success" : estado === "error" ? "alert-error" : "alert-info"}`}>
-              {mensaje}
-            </div>
-          )}
-
-          <button
-            className="btn btn-primary btn-xl"
-            onClick={handleRegistrar}
-            disabled={estado === "obteniendo-gps" || estado === "registrando"}
-          >
-            {estado === "obteniendo-gps" && "📡 Obteniendo GPS…"}
-            {estado === "registrando" && "⏳ Registrando…"}
-            {(estado === "idle" || estado === "exito" || estado === "error") &&
-              `Registrar ${ETIQUETAS[siguienteRegistro]?.label}`}
-          </button>
-
-          {(() => {
-            const sucursalActual = esMedicoGuardia && ubicacionSeleccionada !== "sesion"
-              ? todasSucursales.find((s) => s.id === ubicacionSeleccionada)
-              : sucursal;
-            return (
-              <p className="geocerca-info">
-                📍 Debes estar dentro de <strong>{sucursalActual?.geocerca?.radio || "…"}m</strong> de la sucursal para registrar.
-              </p>
-            );
-          })()}
-        </div>
-      )}
-
-      {progreso === 4 && (
-        <div className="card card-completo">
-          <div className="completo-icon">🎉</div>
-          <h2>¡Jornada completa!</h2>
-          <p>Has completado los 4 registros del día. ¡Hasta mañana!</p>
-        </div>
-      )}
 
       {/* ── Modal: cámara ─────────────────────────────────────────────────── */}
       {modalCamara && (

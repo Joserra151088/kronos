@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { getUsuarios, getPuestos } from "../utils/api";
 import {
-  getDoCompetencias, crearDoCompetencia, eliminarDoCompetencia,
+  getDoCompetencias, crearDoCompetencia, actualizarDoCompetencia, eliminarDoCompetencia,
   getDoEvalCompetencias, crearDoEvalCompetencia,
   getDoEval360, crearDoEval360,
   getDoEval1a1, crearDoEval1a1, actualizarDoEval1a1,
@@ -12,6 +12,43 @@ import {
   getDoPlantillas1a1, crearDoPlantilla1a1, actualizarDoPlantilla1a1, eliminarDoPlantilla1a1,
 } from "../utils/api";
 
+// ─── Preguntas por defecto para cada tipo de evaluación 360 ────────────────────
+const PREGUNTAS_360_DEFAULT = {
+  jefe: [
+    "¿Comunica claramente las expectativas y objetivos del equipo?",
+    "¿Provee retroalimentación oportuna y constructiva?",
+    "¿Apoya el desarrollo profesional de los integrantes del equipo?",
+  ],
+  par: [
+    "¿Colabora de manera efectiva con otros compañeros del mismo nivel?",
+    "¿Cumple con sus compromisos y plazos acordados?",
+    "¿Comparte conocimiento y apoya a sus pares cuando es necesario?",
+  ],
+  personal: [
+    "¿Gestiona y delega tareas de forma adecuada?",
+    "¿Crea un ambiente de trabajo positivo para el equipo a su cargo?",
+    "¿Reconoce los logros y esfuerzos de las personas que supervisa?",
+  ],
+  compañero: [
+    "¿Identificas áreas de mejora propias en tu desempeño actual?",
+    "¿Cuáles son tus principales logros en este período?",
+    "¿Qué recursos o apoyo necesitas para mejorar tu desempeño?",
+  ],
+};
+
+const LS_KEY_360 = "kronos_do_preguntas360";
+
+const cargarPreguntas360 = () => {
+  try {
+    const raw = localStorage.getItem(LS_KEY_360);
+    return raw ? JSON.parse(raw) : PREGUNTAS_360_DEFAULT;
+  } catch { return PREGUNTAS_360_DEFAULT; }
+};
+
+const guardarPreguntas360 = (preguntas) => {
+  localStorage.setItem(LS_KEY_360, JSON.stringify(preguntas));
+};
+
 const PERIODOS = ["2026-Q1", "2026-Q2", "2026-Q3", "2026-Q4", "2025-Q4", "2025-Q3"];
 const TIPOS_EVAL360 = [
   { value: "jefe", label: "Jefe inmediato" },
@@ -20,17 +57,30 @@ const TIPOS_EVAL360 = [
   { value: "compañero", label: "Compañero en la empresa" },
 ];
 
-// ─── Vista: Configuración (Competencias + Indicadores + Plantillas 1a1) ───────
+// ─── Vista: Configuración ──────────────────────────────────────────────────────
 function VistaConfiguracion({ puestos, puedeAdmin }) {
   const [competencias, setCompetencias] = useState([]);
   const [indicadores, setIndicadores] = useState([]);
+  const [satisfaccionConf, setSatisfaccionConf] = useState([]);
   const [filtroPuesto, setFiltroPuesto] = useState("");
   const [tabConf, setTabConf] = useState("competencias");
-  const [modal, setModal] = useState(null); // "competencia" | "indicador"
+  const [modal, setModal] = useState(null); // "competencia" | "competencia_edit" | "indicador"
   const [formComp, setFormComp] = useState({ nombre: "", tipo: "dura", descripcion: "" });
+  const [editCompId, setEditCompId] = useState(null);
   const [formInd, setFormInd] = useState({ puestoId: "", nombre: "", descripcion: "", unidad: "", meta: "" });
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+
+  // Satisfacción de clientes (compañía)
+  const [periodoSat, setPeriodoSat] = useState(PERIODOS[0]);
+  const [formSat, setFormSat] = useState({ calificacion: 8, comentarios: "" });
+  const [guardandoSat, setGuardandoSat] = useState(false);
+  const cargarSat = (p) => getDoSatisfaccion({ periodo: p || periodoSat }).then(setSatisfaccionConf).catch(() => {});
+
+  // Preguntas 360
+  const [preguntas360, setPreguntas360] = useState(cargarPreguntas360);
+  const [tipo360Activo, setTipo360Activo] = useState("jefe");
+  const [nuevaPregunta360, setNuevaPregunta360] = useState("");
 
   // Plantillas 1a1
   const [plantillas, setPlantillas] = useState([]);
@@ -41,8 +91,9 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
   const cargarComp = () => getDoCompetencias().then(setCompetencias).catch(() => {});
   const cargarInd = () => getDoIndicadores(filtroPuesto ? { puestoId: filtroPuesto } : {}).then(setIndicadores).catch(() => {});
 
-  useEffect(() => { cargarComp(); getDoPlantillas1a1().then(setPlantillas).catch(() => {}); }, []);
+  useEffect(() => { cargarComp(); getDoPlantillas1a1().then(setPlantillas).catch(() => {}); cargarSat(PERIODOS[0]); }, []);
   useEffect(() => { cargarInd(); }, [filtroPuesto]);
+  useEffect(() => { cargarSat(periodoSat); }, [periodoSat]);
 
   const countByPuesto = {};
   indicadores.forEach((i) => { countByPuesto[i.puestoId] = (countByPuesto[i.puestoId] || 0) + 1; });
@@ -52,9 +103,22 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
   const submitComp = async (e) => {
     e.preventDefault(); setError(""); setGuardando(true);
     try {
-      await crearDoCompetencia(formComp);
-      setModal(null); setFormComp({ nombre: "", tipo: "dura", descripcion: "" }); cargarComp();
+      if (editCompId) {
+        await actualizarDoCompetencia(editCompId, formComp);
+      } else {
+        await crearDoCompetencia(formComp);
+      }
+      setModal(null); setEditCompId(null); setFormComp({ nombre: "", tipo: "dura", descripcion: "" }); cargarComp();
     } catch (err) { setError(err.message); } finally { setGuardando(false); }
+  };
+
+  const submitSatisfaccionConf = async (e) => {
+    e.preventDefault(); setGuardandoSat(true);
+    try {
+      await crearDoSatisfaccion({ ...formSat, periodo: periodoSat });
+      setFormSat({ calificacion: 8, comentarios: "" });
+      cargarSat(periodoSat);
+    } catch (err) { alert(err.message); } finally { setGuardandoSat(false); }
   };
 
   const submitInd = async (e) => {
@@ -67,17 +131,20 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-        {["competencias", "indicadores"].map((t) => (
-          <button key={t} onClick={() => setTabConf(t)}
-            className={`btn ${tabConf === t ? "btn-primary" : "btn-secondary"}`}>
-            {t === "competencias" ? "🎯 Competencias" : "📈 Indicadores Estratégicos"}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        {[
+          { key: "competencias", label: "🎯 Competencias" },
+          { key: "indicadores",  label: "📈 Indicadores" },
+          { key: "plantillas1a1", label: "📝 Plantillas 1a1" },
+          { key: "satisfaccion",  label: "⭐ Satisfacción Clientes" },
+          { key: "preguntas360",  label: "🔄 Preguntas 360°" },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => setTabConf(key)}
+            className={`btn ${tabConf === key ? "btn-primary" : "btn-secondary"}`}
+            style={{ fontSize: "0.85rem" }}>
+            {label}
           </button>
         ))}
-        <button onClick={() => setTabConf("plantillas1a1")}
-          className={`btn ${tabConf === "plantillas1a1" ? "btn-primary" : "btn-secondary"}`}>
-          📝 Plantillas 1a1
-        </button>
       </div>
 
       {tabConf === "competencias" && (
@@ -97,10 +164,16 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
                   <span className={`badge ${c.tipo === "dura" ? "badge-primary" : "badge-success"}`}>{c.tipo}</span>
                 </div>
                 {puedeAdmin && (
-                  <button className="btn btn-danger btn-sm" style={{ marginTop: 8 }}
-                    onClick={() => { if (window.confirm("¿Eliminar?")) eliminarDoCompetencia(c.id).then(cargarComp); }}>
-                    Eliminar
-                  </button>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <button className="btn btn-secondary btn-sm" style={{ flex: 1 }}
+                      onClick={() => { setError(""); setEditCompId(c.id); setFormComp({ nombre: c.nombre, tipo: c.tipo, descripcion: c.descripcion || "" }); setModal("competencia"); }}>
+                      ✏️ Editar
+                    </button>
+                    <button className="btn btn-danger btn-sm" style={{ flex: 1 }}
+                      onClick={() => { if (window.confirm("¿Eliminar esta competencia?")) eliminarDoCompetencia(c.id).then(cargarComp); }}>
+                      🗑️ Eliminar
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -254,11 +327,181 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
         </div>
       )}
 
-      {/* Modal competencia */}
+      {/* Tab: Satisfacción de Clientes */}
+      {tabConf === "satisfaccion" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+            <h3 style={{ margin: 0 }}>⭐ Satisfacción de Clientes — Compañía</h3>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <label style={{ fontSize: "0.85rem", color: "var(--text2)" }}>Período:</label>
+              <select className="form-control" value={periodoSat} onChange={(e) => setPeriodoSat(e.target.value)} style={{ width: 140 }}>
+                {PERIODOS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Resumen del período */}
+          {satisfaccionConf.length > 0 && (() => {
+            const prom = (satisfaccionConf.reduce((s, r) => s + r.calificacion, 0) / satisfaccionConf.length).toFixed(1);
+            const color = Number(prom) >= 8 ? "#10b981" : Number(prom) >= 6 ? "#f59e0b" : "#ef4444";
+            return (
+              <div style={{ display: "flex", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+                <div style={{ background: "var(--bg3)", borderRadius: 12, padding: "20px 28px", textAlign: "center", minWidth: 140 }}>
+                  <div style={{ fontSize: "2.5rem", fontWeight: 700, color }}>{prom}</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text2)" }}>Promedio / 10</div>
+                </div>
+                <div style={{ background: "var(--bg3)", borderRadius: 12, padding: "20px 28px", textAlign: "center", minWidth: 120 }}>
+                  <div style={{ fontSize: "2.5rem", fontWeight: 700 }}>{satisfaccionConf.length}</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text2)" }}>Registros</div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Historial */}
+          {satisfaccionConf.length > 0 ? (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
+              {satisfaccionConf.map((r) => {
+                const col = r.calificacion >= 8 ? "#10b981" : r.calificacion >= 6 ? "#f59e0b" : "#ef4444";
+                return (
+                  <div key={r.id} style={{ background: "var(--bg)", borderRadius: 10, padding: "10px 16px", textAlign: "center", border: `2px solid ${col}22` }}>
+                    <div style={{ fontWeight: 700, fontSize: "1.5rem", color: col }}>{r.calificacion}/10</div>
+                    <div style={{ fontSize: "0.7rem", color: "var(--text2)", marginTop: 2 }}>{r.creadoEn?.split("T")[0]}</div>
+                    {r.comentarios && <div style={{ fontSize: "0.72rem", marginTop: 4, color: "var(--text2)", maxWidth: 140 }}>{r.comentarios}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ color: "var(--text2)", fontStyle: "italic", marginBottom: 24 }}>Sin registros para este período.</div>
+          )}
+
+          {/* Formulario nuevo registro */}
+          {puedeAdmin && (
+            <div style={{ background: "var(--bg3)", borderRadius: 12, padding: 20, maxWidth: 480 }}>
+              <h4 style={{ margin: "0 0 14px", fontSize: "0.95rem" }}>+ Registrar calificación</h4>
+              <form onSubmit={submitSatisfaccionConf}>
+                <div className="form-group">
+                  <label>Calificación (1–10) *</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                    {[1,2,3,4,5,6,7,8,9,10].map((v) => {
+                      const col = v >= 8 ? "#10b981" : v >= 6 ? "#f59e0b" : "#ef4444";
+                      return (
+                        <button key={v} type="button" onClick={() => setFormSat((f) => ({ ...f, calificacion: v }))}
+                          style={{ width: 40, height: 40, borderRadius: 8, border: "2px solid", fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
+                            borderColor: formSat.calificacion === v ? col : "var(--border)",
+                            background: formSat.calificacion === v ? col : "var(--bg2)",
+                            color: formSat.calificacion === v ? "#fff" : "var(--text)" }}>
+                          {v}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Comentarios (opcional)</label>
+                  <textarea value={formSat.comentarios} onChange={(e) => setFormSat((f) => ({ ...f, comentarios: e.target.value }))} rows={2} placeholder="Contexto sobre la calificación…" />
+                </div>
+                <button type="submit" className="btn btn-primary" disabled={guardandoSat}>
+                  {guardandoSat ? "Guardando…" : "Registrar calificación"}
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Preguntas 360° */}
+      {tabConf === "preguntas360" && (
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <h3 style={{ margin: "0 0 6px" }}>🔄 Banco de Preguntas para Evaluación 360°</h3>
+            <p style={{ color: "var(--text2)", fontSize: "0.85rem", margin: 0 }}>
+              Define las preguntas que se mostrarán al evaluar a cada empleado según el tipo de relación. Las preguntas se guardan localmente en este navegador.
+            </p>
+          </div>
+
+          {/* Tabs por tipo */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+            {TIPOS_EVAL360.map((t) => (
+              <button key={t.value} onClick={() => setTipo360Activo(t.value)}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", fontSize: "0.85rem", fontWeight: tipo360Activo === t.value ? 700 : 400,
+                  background: tipo360Activo === t.value ? "var(--accent)" : "var(--bg3)",
+                  color: tipo360Activo === t.value ? "#fff" : "var(--text2)" }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ background: "var(--bg3)", borderRadius: 12, padding: 20, maxWidth: 580 }}>
+            <p style={{ fontSize: "0.82rem", color: "var(--text2)", marginBottom: 14 }}>
+              Preguntas para el evaluador tipo: <strong>{TIPOS_EVAL360.find(t => t.value === tipo360Activo)?.label}</strong>
+            </p>
+
+            {/* Lista de preguntas */}
+            <ol style={{ paddingLeft: 20, margin: "0 0 14px" }}>
+              {(preguntas360[tipo360Activo] || []).map((q, idx) => (
+                <li key={idx} style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <span style={{ fontSize: "0.88rem", flex: 1 }}>{q}</span>
+                  {puedeAdmin && (
+                    <button onClick={() => {
+                      const updated = { ...preguntas360, [tipo360Activo]: preguntas360[tipo360Activo].filter((_, i) => i !== idx) };
+                      setPreguntas360(updated); guardarPreguntas360(updated);
+                    }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: "1rem", flexShrink: 0, padding: "0 4px" }}>✕</button>
+                  )}
+                </li>
+              ))}
+              {(preguntas360[tipo360Activo] || []).length === 0 && (
+                <li style={{ listStyle: "none", color: "var(--text2)", fontStyle: "italic", fontSize: "0.85rem" }}>Sin preguntas definidas.</li>
+              )}
+            </ol>
+
+            {/* Agregar nueva pregunta */}
+            {puedeAdmin && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <input className="form-control" value={nuevaPregunta360} onChange={(e) => setNuevaPregunta360(e.target.value)}
+                  placeholder="Escribe una nueva pregunta…" style={{ flex: 1 }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (nuevaPregunta360.trim()) {
+                        const updated = { ...preguntas360, [tipo360Activo]: [...(preguntas360[tipo360Activo] || []), nuevaPregunta360.trim()] };
+                        setPreguntas360(updated); guardarPreguntas360(updated); setNuevaPregunta360("");
+                      }
+                    }
+                  }} />
+                <button type="button" className="btn btn-primary" onClick={() => {
+                  if (nuevaPregunta360.trim()) {
+                    const updated = { ...preguntas360, [tipo360Activo]: [...(preguntas360[tipo360Activo] || []), nuevaPregunta360.trim()] };
+                    setPreguntas360(updated); guardarPreguntas360(updated); setNuevaPregunta360("");
+                  }
+                }}>+ Añadir</button>
+              </div>
+            )}
+
+            {puedeAdmin && (
+              <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 12 }}
+                onClick={() => {
+                  if (window.confirm("¿Restaurar preguntas predeterminadas para este tipo?")) {
+                    const updated = { ...preguntas360, [tipo360Activo]: PREGUNTAS_360_DEFAULT[tipo360Activo] };
+                    setPreguntas360(updated); guardarPreguntas360(updated);
+                  }
+                }}>
+                🔄 Restaurar predeterminadas
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal competencia (crear / editar) */}
       {modal === "competencia" && (
-        <div className="modal-overlay" onClick={() => setModal(null)}>
+        <div className="modal-overlay" onClick={() => { setModal(null); setEditCompId(null); }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h2>Nueva Competencia</h2><button className="modal-close" onClick={() => setModal(null)}>✕</button></div>
+            <div className="modal-header">
+              <h2>{editCompId ? "Editar Competencia" : "Nueva Competencia"}</h2>
+              <button className="modal-close" onClick={() => { setModal(null); setEditCompId(null); }}>✕</button>
+            </div>
             <form onSubmit={submitComp} className="modal-form">
               {error && <div className="alert alert-error">{error}</div>}
               <div className="form-group"><label>Nombre *</label><input value={formComp.nombre} onChange={(e) => setFormComp((f) => ({ ...f, nombre: e.target.value }))} required /></div>
@@ -269,8 +512,8 @@ function VistaConfiguracion({ puestos, puedeAdmin }) {
               </div>
               <div className="form-group"><label>Descripción</label><textarea value={formComp.descripcion} onChange={(e) => setFormComp((f) => ({ ...f, descripcion: e.target.value }))} rows={2} /></div>
               <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={guardando}>{guardando ? "Guardando…" : "Crear"}</button>
+                <button type="button" className="btn btn-secondary" onClick={() => { setModal(null); setEditCompId(null); }}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" disabled={guardando}>{guardando ? "Guardando…" : editCompId ? "Guardar cambios" : "Crear"}</button>
               </div>
             </form>
           </div>
@@ -624,25 +867,30 @@ function Seccion1a1({ empleado, eval1a1, plantillas = [], cargar }) {
 }
 
 // ─── Vista: Perfil de evaluaciones por empleado ───────────────────────────────
-function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, indicadores, onVolver }) {
+function PerfilEmpleado({ empleado, periodo, setPeriodo, puestos, onVolver }) {
   const [eval360, setEval360] = useState([]);
   const [evalComp, setEvalComp] = useState([]);
   const [eval1a1, setEval1a1] = useState([]);
   const [plantillas1a1, setPlantillas1a1] = useState([]);
-  const [satisfaccion, setSatisfaccion] = useState([]);
   const [indValores, setIndValores] = useState([]);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
+  // Carga fresca de competencias e indicadores dentro del perfil
+  const [competencias, setCompetencias] = useState([]);
+  const [indicadores, setIndicadores] = useState([]);
+  const preguntas360 = cargarPreguntas360();
+
   const cargar = () => {
     getDoEval360({ evaluadoId: empleado.id, periodo }).then(setEval360).catch(() => {});
     getDoEvalCompetencias({ evaluadoId: empleado.id, periodo }).then(setEvalComp).catch(() => {});
     getDoEval1a1({ empleadoId: empleado.id }).then(setEval1a1).catch(() => {});
-    getDoSatisfaccion({ periodo }).then(setSatisfaccion).catch(() => {});
     getDoIndicadoresValores({ usuarioId: empleado.id, periodo }).then(setIndValores).catch(() => {});
     getDoPlantillas1a1().then(setPlantillas1a1).catch(() => {});
+    getDoCompetencias().then(setCompetencias).catch(() => {});
+    getDoIndicadores().then(setIndicadores).catch(() => {});
   };
   useEffect(() => { cargar(); }, [empleado.id, periodo]);
 
@@ -666,14 +914,6 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
     } catch (err) { setError(err.message); } finally { setGuardando(false); }
   };
 
-  const submitSatisfaccion = async (e) => {
-    e.preventDefault(); setError(""); setGuardando(true);
-    try {
-      await crearDoSatisfaccion({ ...form, periodo });
-      setModal(null); cargar();
-    } catch (err) { setError(err.message); } finally { setGuardando(false); }
-  };
-
   const submitValorInd = async (e) => {
     e.preventDefault(); setError(""); setGuardando(true);
     try {
@@ -687,7 +927,6 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
     ? (evalComp.flatMap((e) => e.detalles).reduce((s, d) => s + d.calificacion, 0) / evalComp.flatMap((e) => e.detalles).length).toFixed(1)
     : null;
   const realizadas1a1 = eval1a1.filter((e) => e.realizada).length;
-  const promSat = satisfaccion.length ? (satisfaccion.reduce((s, r) => s + r.calificacion, 0) / satisfaccion.length).toFixed(1) : null;
 
   const cardStyle = { background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 16 };
   const headerStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 };
@@ -707,12 +946,11 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
       </div>
 
       {/* Resumen rápido */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
         {[
           { label: "Eval. 360", value: prom360 ? `${prom360}/5` : "—", icon: "🔄", color: "#6366f1" },
           { label: "Competencias", value: promComp ? `${promComp}/5` : "—", icon: "🎯", color: "#10b981" },
-          { label: "1 a 1", value: `${realizadas1a1}/${eval1a1.length}`, icon: "🤝", color: "#f59e0b" },
-          { label: "Satisf. Clientes", value: promSat ? `${promSat}/10` : "—", icon: "⭐", color: "#0ea5e9" },
+          { label: "Sesiones 1a1", value: `${realizadas1a1}/${eval1a1.length}`, icon: "🤝", color: "#f59e0b" },
           { label: "Indicadores", value: `${indValores.length}/${indEmpleado.length}`, icon: "📈", color: "#8b5cf6" },
         ].map((m) => (
           <div key={m.label} style={{ background: "var(--bg3)", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
@@ -727,7 +965,12 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
       <div style={cardStyle}>
         <div style={headerStyle}>
           <h3 style={{ margin: 0 }}>🔄 Evaluación 360</h3>
-          <button className="btn btn-primary btn-sm" onClick={() => { setForm({ tipoEvaluador: "jefe", calificacion: 3, comentarios: "" }); setError(""); setModal("360"); }}>+ Agregar</button>
+          <button className="btn btn-primary btn-sm" onClick={() => {
+            const tipo = "jefe";
+            const pregs = cargarPreguntas360();
+            setForm({ tipoEvaluador: tipo, calificacion: 3, comentarios: "", respuestas360: (pregs[tipo] || []).map((q) => ({ pregunta: q, respuesta: "" })) });
+            setError(""); setModal("360");
+          }}>+ Agregar</button>
         </div>
         {eval360.length === 0 ? <p style={{ color: "var(--text2)", fontSize: "0.85rem" }}>Sin evaluaciones 360 en este periodo.</p> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
@@ -774,31 +1017,7 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
       {/* 3. Evaluaciones 1 a 1 */}
       <Seccion1a1 empleado={empleado} eval1a1={eval1a1} plantillas={plantillas1a1} cargar={cargar} />
 
-      {/* 4. Satisfacción de Clientes */}
-      <div style={cardStyle}>
-        <div style={headerStyle}>
-          <h3 style={{ margin: 0 }}>⭐ Satisfacción de Clientes</h3>
-          <button className="btn btn-primary btn-sm" onClick={() => { setForm({ calificacion: 7, comentarios: "" }); setError(""); setModal("satisfaccion"); }}>+ Registrar</button>
-        </div>
-        <p style={{ fontSize: "0.82rem", color: "var(--text2)", margin: "0 0 10px" }}>Calificación global de la empresa para el periodo {periodo}.</p>
-        {satisfaccion.length === 0 ? <p style={{ color: "var(--text2)", fontSize: "0.85rem" }}>Sin registros de satisfacción en este periodo.</p> : (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {satisfaccion.map((r) => {
-              const color = r.calificacion >= 8 ? "#10b981" : r.calificacion >= 6 ? "#f59e0b" : "#ef4444";
-              return (
-                <div key={r.id} style={{ background: "var(--bg)", borderRadius: 8, padding: "8px 14px", textAlign: "center" }}>
-                  <div style={{ fontWeight: 700, fontSize: "1.4rem", color }}>{r.calificacion}/10</div>
-                  <div style={{ fontSize: "0.72rem", color: "var(--text2)" }}>{r.creadoEn?.split("T")[0]}</div>
-                  {r.comentarios && <div style={{ fontSize: "0.72rem", marginTop: 4 }}>{r.comentarios}</div>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {promSat && <div style={{ marginTop: 8, fontSize: "0.85rem", fontWeight: 600 }}>Promedio periodo: <span style={{ color: "#0ea5e9" }}>{promSat}/10</span></div>}
-      </div>
-
-      {/* 5. Indicadores Estratégicos */}
+      {/* 4. Indicadores Estratégicos */}
       <div style={cardStyle}>
         <div style={headerStyle}>
           <h3 style={{ margin: 0 }}>📈 Indicadores Estratégicos</h3>
@@ -835,29 +1054,68 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
       {/* ─── Modales ─── */}
       {modal === "360" && (
         <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h2>Evaluación 360 — {empleado.nombre}</h2><button className="modal-close" onClick={() => setModal(null)}>✕</button></div>
+          <div className="modal modal-large" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>🔄 Evaluación 360 — {empleado.nombre}</h2>
+              <button className="modal-close" onClick={() => setModal(null)}>✕</button>
+            </div>
             <form onSubmit={submit360} className="modal-form">
               {error && <div className="alert alert-error">{error}</div>}
-              <div className="form-group"><label>Tipo de evaluador *</label>
-                <select value={form.tipoEvaluador} onChange={(e) => setForm((f) => ({ ...f, tipoEvaluador: e.target.value }))}>
+              <div className="form-group">
+                <label>Tipo de relación con el evaluado *</label>
+                <select value={form.tipoEvaluador}
+                  onChange={(e) => setForm((f) => ({ ...f, tipoEvaluador: e.target.value, respuestas360: (preguntas360[e.target.value] || []).map((q) => ({ pregunta: q, respuesta: "" })) }))}>
                   {TIPOS_EVAL360.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
-              <div className="form-group"><label>Calificación (1–5) *</label>
-                <div style={{ display: "flex", gap: 8 }}>
+
+              {/* Preguntas configuradas para este tipo */}
+              {(preguntas360[form.tipoEvaluador] || []).length > 0 && (
+                <div style={{ background: "var(--bg3)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+                  <p style={{ fontWeight: 600, fontSize: "0.85rem", marginBottom: 12, color: "var(--text2)" }}>
+                    Preguntas para {TIPOS_EVAL360.find(t => t.value === form.tipoEvaluador)?.label}:
+                  </p>
+                  {(form.respuestas360 || []).map((r, idx) => (
+                    <div key={idx} className="form-group" style={{ marginBottom: 12 }}>
+                      <label style={{ fontWeight: 600, fontSize: "0.82rem" }}>{idx + 1}. {r.pregunta}</label>
+                      <textarea
+                        value={r.respuesta}
+                        onChange={(e) => setForm((f) => {
+                          const r360 = [...(f.respuestas360 || [])];
+                          r360[idx] = { ...r360[idx], respuesta: e.target.value };
+                          return { ...f, respuestas360: r360 };
+                        })}
+                        placeholder="Escribe tu respuesta…"
+                        rows={2}
+                        style={{ fontSize: "0.85rem" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Calificación general (1–5) *</label>
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                   {[1,2,3,4,5].map((v) => (
                     <button key={v} type="button" onClick={() => setForm((f) => ({ ...f, calificacion: v }))}
-                      style={{ width: 44, height: 44, borderRadius: 8, border: "2px solid", borderColor: form.calificacion === v ? "#6366f1" : "var(--border)", background: form.calificacion === v ? "#6366f1" : "var(--bg3)", color: form.calificacion === v ? "#fff" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>
+                      style={{ width: 48, height: 48, borderRadius: 10, border: "2px solid",
+                        borderColor: form.calificacion === v ? "#6366f1" : "var(--border)",
+                        background: form.calificacion === v ? "#6366f1" : "var(--bg3)",
+                        color: form.calificacion === v ? "#fff" : "var(--text)",
+                        cursor: "pointer", fontWeight: 700, fontSize: "1.1rem" }}>
                       {v}
                     </button>
                   ))}
                 </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "var(--text2)", marginTop: 4, paddingLeft: 4 }}>
+                  <span>Muy bajo</span><span>Excelente</span>
+                </div>
               </div>
-              <div className="form-group"><label>Comentarios</label><textarea value={form.comentarios} onChange={(e) => setForm((f) => ({ ...f, comentarios: e.target.value }))} rows={2} /></div>
+              <div className="form-group"><label>Comentarios adicionales</label><textarea value={form.comentarios} onChange={(e) => setForm((f) => ({ ...f, comentarios: e.target.value }))} rows={2} /></div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={guardando}>{guardando ? "Guardando…" : "Registrar"}</button>
+                <button type="submit" className="btn btn-primary" disabled={guardando}>{guardando ? "Guardando…" : "Registrar evaluación"}</button>
               </div>
             </form>
           </div>
@@ -867,10 +1125,15 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
       {modal === "competencias" && (
         <div className="modal-overlay" onClick={() => setModal(null)}>
           <div className="modal" style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h2>Eval. Competencias — {empleado.nombre}</h2><button className="modal-close" onClick={() => setModal(null)}>✕</button></div>
+            <div className="modal-header"><h2>🎯 Eval. Competencias — {empleado.nombre}</h2><button className="modal-close" onClick={() => setModal(null)}>✕</button></div>
             <form onSubmit={submitComp} className="modal-form">
               {error && <div className="alert alert-error">{error}</div>}
-              <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 12 }}>
+              {competencias.length === 0 && (
+                <div className="alert alert-warning" style={{ marginBottom: 12 }}>
+                  No hay competencias en el catálogo. Ve a <strong>Configuración → Competencias</strong> para agregar.
+                </div>
+              )}
+              <div style={{ maxHeight: 340, overflowY: "auto", marginBottom: 12 }}>
                 {(form.detalles || []).map((d, i) => (
                   <div key={d.competenciaId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
                     <div style={{ flex: 1 }}>
@@ -881,7 +1144,7 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
                       {[1,2,3,4,5].map((v) => (
                         <button key={v} type="button"
                           onClick={() => setForm((f) => { const det = [...f.detalles]; det[i] = { ...det[i], calificacion: v }; return { ...f, detalles: det }; })}
-                          style={{ width: 30, height: 30, borderRadius: 5, border: "1px solid var(--border)", background: d.calificacion >= v ? "#10b981" : "var(--bg3)", color: d.calificacion >= v ? "#fff" : "var(--text)", cursor: "pointer", fontWeight: 600 }}>
+                          style={{ width: 32, height: 32, borderRadius: 6, border: "1px solid var(--border)", background: d.calificacion >= v ? "#10b981" : "var(--bg3)", color: d.calificacion >= v ? "#fff" : "var(--text)", cursor: "pointer", fontWeight: 600 }}>
                           {v}
                         </button>
                       ))}
@@ -892,36 +1155,7 @@ function PerfilEmpleado({ empleado, periodo, setPeriodo, competencias, puestos, 
               <div className="form-group"><label>Comentarios</label><textarea value={form.comentarios} onChange={(e) => setForm((f) => ({ ...f, comentarios: e.target.value }))} rows={2} /></div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={guardando}>{guardando ? "Guardando…" : "Registrar"}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {modal === "satisfaccion" && (
-        <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h2>Satisfacción de Clientes — {periodo}</h2><button className="modal-close" onClick={() => setModal(null)}>✕</button></div>
-            <form onSubmit={submitSatisfaccion} className="modal-form">
-              {error && <div className="alert alert-error">{error}</div>}
-              <div className="form-group"><label>Calificación (1–10) *</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {[1,2,3,4,5,6,7,8,9,10].map((v) => {
-                    const col = v >= 8 ? "#10b981" : v >= 6 ? "#f59e0b" : "#ef4444";
-                    return (
-                      <button key={v} type="button" onClick={() => setForm((f) => ({ ...f, calificacion: v }))}
-                        style={{ width: 40, height: 40, borderRadius: 6, border: "2px solid", borderColor: form.calificacion === v ? col : "var(--border)", background: form.calificacion === v ? col : "var(--bg3)", color: form.calificacion === v ? "#fff" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>
-                        {v}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="form-group"><label>Comentarios</label><textarea value={form.comentarios} onChange={(e) => setForm((f) => ({ ...f, comentarios: e.target.value }))} rows={2} /></div>
-              <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={guardando}>{guardando ? "Guardando…" : "Registrar"}</button>
+                <button type="submit" className="btn btn-primary" disabled={guardando || competencias.length === 0}>{guardando ? "Guardando…" : "Registrar"}</button>
               </div>
             </form>
           </div>
@@ -1006,8 +1240,6 @@ const DesarrolloOrganizacional = () => {
   const [empleadoSeleccionado, setEmpleadoSeleccionado] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
   const [puestos, setPuestos] = useState([]);
-  const [competencias, setCompetencias] = useState([]);
-  const [indicadores, setIndicadores] = useState([]);
   const [periodo, setPeriodo] = useState(PERIODOS[0]);
 
   const puedeAdmin = ["super_admin", "administrador_general", "desarrollo_organizacional"].includes(usuario?.rol);
@@ -1015,8 +1247,6 @@ const DesarrolloOrganizacional = () => {
   useEffect(() => {
     getUsuarios().then((u) => setUsuarios(Array.isArray(u) ? u.filter((e) => e.evaluacionesHabilitadas !== false) : [])).catch(() => {});
     getPuestos().then((p) => setPuestos(Array.isArray(p) ? p : [])).catch(() => {});
-    getDoCompetencias().then(setCompetencias).catch(() => {});
-    getDoIndicadores().then(setIndicadores).catch(() => {});
   }, []);
 
   const handleSeleccionarEmpleado = (emp) => {
@@ -1038,9 +1268,7 @@ const DesarrolloOrganizacional = () => {
           empleado={empleadoSeleccionado}
           periodo={periodo}
           setPeriodo={setPeriodo}
-          competencias={competencias}
           puestos={puestos}
-          indicadores={indicadores}
           onVolver={() => setEmpleadoSeleccionado(null)}
         />
       ) : (

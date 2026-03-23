@@ -384,6 +384,8 @@ input, select, button, textarea {
 
 /* ─── Páginas ─────────────────────────────────────────────────────────────── */
 .page { padding: 32px 36px; max-width: 1440px; margin: 0 auto; }
+.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
 
 .page-header {
   display: flex;
@@ -1217,8 +1219,9 @@ input::placeholder { color: var(--text2); }
   color: var(--text);
   flex: 1;
 }
-/* Botón panel en móvil */
+/* Botón panel — solo visible en pantallas < 768px (≈8 pulgadas) */
 .mobile-panel-btn {
+  display: none; /* oculto en pantallas grandes */
   background: var(--bg3);
   border: 1px solid var(--border);
   color: var(--text2);
@@ -1227,9 +1230,11 @@ input::placeholder { color: var(--text2); }
   padding: 7px 9px;
   border-radius: 8px;
   line-height: 1;
-  display: flex;
   align-items: center;
   transition: all var(--transition);
+}
+@media (max-width: 768px) {
+  .mobile-panel-btn { display: flex; }
 }
 .mobile-panel-btn:hover,
 .mobile-panel-btn.active {
