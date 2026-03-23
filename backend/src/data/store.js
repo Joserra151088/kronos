@@ -439,8 +439,16 @@ const MODULOS_SISTEMA = [
 ];
 
 // Mapa rol → módulos permitidos (configurable desde el panel de Admin)
+// Lista completa de módulos para roles con acceso total
+const MODULOS_ACCESO_TOTAL = [
+  "dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa",
+  "administracion","auditoria","logs","notificaciones","vacaciones","incapacidades",
+  "calendario","organigrama","horarios","desarrollo_organizacional",
+];
+
 let configuracionRoles = {
-  super_admin:                 ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","auditoria","logs","notificaciones","vacaciones","incapacidades","calendario","organigrama","horarios","desarrollo_organizacional"],
+  administrador_general:       MODULOS_ACCESO_TOTAL,
+  super_admin:                 MODULOS_ACCESO_TOTAL,
   agente_soporte_ti:           ["dashboard","eventos","incidencias","reportes","sucursales","empleados","grupos","mapa","administracion","logs","notificaciones","vacaciones","incapacidades","calendario","organigrama","horarios"],
   supervisor_sucursales:       ["dashboard","eventos","incidencias","reportes","empleados","grupos","mapa","notificaciones","vacaciones","incapacidades","calendario","organigrama"],
   agente_control_asistencia:   ["dashboard","eventos","incidencias","notificaciones","vacaciones","incapacidades","calendario"],
@@ -451,16 +459,22 @@ let configuracionRoles = {
   desarrollo_organizacional:   ["dashboard","desarrollo_organizacional","notificaciones"],
 };
 
+/**
+ * ROLE_DEFINITIONS — catálogo base de roles.
+ * Cada entrada: clave → { nombre, puedeEditar }
+ * puedeEditar controla si los usuarios con ese rol pueden crear/editar/eliminar registros.
+ */
 const ROLE_DEFINITIONS = {
-  super_admin: "Super Administrador",
-  agente_soporte_ti: "Agente Soporte TI",
-  supervisor_sucursales: "Supervisor de Sucursales",
-  agente_control_asistencia: "Agente Control de Asistencia",
-  visor_reportes: "Visor de Reportes",
-  medico_titular: "Medico Titular",
-  medico_de_guardia: "Medico de Guardia",
-  nominas: "Nóminas",
-  desarrollo_organizacional: "Desarrollo Organizacional",
+  administrador_general:     { nombre: "Administrador General",          puedeEditar: true  },
+  super_admin:               { nombre: "Super Administrador",            puedeEditar: true  },
+  agente_soporte_ti:         { nombre: "Agente Soporte TI",              puedeEditar: true  },
+  supervisor_sucursales:     { nombre: "Supervisor de Sucursales",       puedeEditar: true  },
+  agente_control_asistencia: { nombre: "Agente Control de Asistencia",   puedeEditar: true  },
+  nominas:                   { nombre: "Nóminas",                        puedeEditar: true  },
+  visor_reportes:            { nombre: "Visor de Reportes",              puedeEditar: false },
+  medico_titular:            { nombre: "Medico Titular",                 puedeEditar: false },
+  medico_de_guardia:         { nombre: "Medico de Guardia",              puedeEditar: false },
+  desarrollo_organizacional: { nombre: "Desarrollo Organizacional",      puedeEditar: false },
 };
 
 // ─── Registros de acceso ──────────────────────────────────────────────────────
@@ -1788,11 +1802,13 @@ const persistDatabaseSnapshot = async () => {
 
     if (hasTable("roles")) {
       await connection.query("DELETE FROM roles");
-      for (const [clave, nombre] of Object.entries(ROLE_DEFINITIONS)) {
+      for (const [clave, def] of Object.entries(ROLE_DEFINITIONS)) {
+        const nombre      = typeof def === "object" ? def.nombre      : def;
+        const puedeEditar = typeof def === "object" ? (def.puedeEditar ? 1 : 0) : 1;
         await connection.query(
-          `INSERT INTO roles (clave, nombre, descripcion, activo, created_at, updated_at)
-           VALUES (?, ?, NULL, 1, NOW(), NOW())`,
-          [clave, nombre]
+          `INSERT INTO roles (clave, nombre, descripcion, activo, puede_editar, created_at, updated_at)
+           VALUES (?, ?, NULL, 1, ?, NOW(), NOW())`,
+          [clave, nombre, puedeEditar]
         );
       }
     }
@@ -2582,8 +2598,9 @@ module.exports = {
    */
   getModulosDeRol: (rol) => {
     const MODULOS_GARANTIZADOS = {
-      super_admin:        ["logs", "auditoria"],
-      agente_soporte_ti:  ["logs"],
+      administrador_general: ["logs", "auditoria"],
+      super_admin:           ["logs", "auditoria"],
+      agente_soporte_ti:     ["logs"],
     };
     const mods   = [...(configuracionRoles[rol] || [])];
     const extras = MODULOS_GARANTIZADOS[rol] || [];
