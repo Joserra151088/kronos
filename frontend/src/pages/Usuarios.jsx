@@ -381,13 +381,14 @@ const Usuarios = () => {
   // Resetear a página 1 cuando cambien los filtros
   useEffect(() => { setPagina(1); }, [tabActivo, filtroSucursal, filtroGrupo, busqueda]);
 
-  // ─── Catálogos auxiliares (sin paginación, caché larga) ──────────────
-  const { data: puestosData    } = useQuery({ queryKey: ["puestos"],    queryFn: getPuestos,    staleTime: 10 * 60 * 1000 });
-  const { data: sucursalesData } = useQuery({ queryKey: ["sucursales"], queryFn: getSucursales, staleTime: 10 * 60 * 1000 });
-  const { data: gruposData     } = useQuery({ queryKey: ["grupos"],     queryFn: getGrupos,     staleTime: 10 * 60 * 1000 });
-  const { data: horariosData   } = useQuery({ queryKey: ["horarios"],   queryFn: getHorarios,   staleTime: 10 * 60 * 1000 });
-  const { data: areasData      } = useQuery({ queryKey: ["areas"],      queryFn: getAreas,      staleTime: 10 * 60 * 1000 });
-  const { data: rolesData      } = useQuery({ queryKey: ["roles"],      queryFn: getRoles,      staleTime: 5 * 60 * 1000 });
+  // ─── Catálogos auxiliares — staleTime corto para reflejar cambios inmediatamente ──
+  const CATALOGO_STALE = 30 * 1000; // 30 s: siempre frescos sin saturar el servidor
+  const { data: puestosData    } = useQuery({ queryKey: ["puestos"],    queryFn: getPuestos,    staleTime: CATALOGO_STALE, refetchOnMount: "always" });
+  const { data: sucursalesData } = useQuery({ queryKey: ["sucursales"], queryFn: getSucursales, staleTime: CATALOGO_STALE, refetchOnMount: "always" });
+  const { data: gruposData     } = useQuery({ queryKey: ["grupos"],     queryFn: getGrupos,     staleTime: CATALOGO_STALE, refetchOnMount: "always" });
+  const { data: horariosData   } = useQuery({ queryKey: ["horarios"],   queryFn: getHorarios,   staleTime: CATALOGO_STALE, refetchOnMount: "always" });
+  const { data: areasData      } = useQuery({ queryKey: ["areas"],      queryFn: getAreas,      staleTime: CATALOGO_STALE, refetchOnMount: "always" });
+  const { data: rolesData      } = useQuery({ queryKey: ["roles"],      queryFn: getRoles,      staleTime: CATALOGO_STALE, refetchOnMount: "always" });
 
   useEffect(() => {
     if (puestosData)    setPuestos(Array.isArray(puestosData)    ? puestosData    : []);

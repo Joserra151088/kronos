@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import { useEmpresa } from "../context/EmpresaContext";
 import {
@@ -152,6 +153,7 @@ const ROLES_SISTEMA = [
 const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
   const { usuario } = useAuth();
   const { setEmpresa: setEmpresaGlobal, refreshEmpresa } = useEmpresa();
+  const queryClient = useQueryClient();
   const esSuperAdmin = ["super_admin", "administrador_general"].includes(usuario?.rol);
 
   const [tab,       setTab]       = useState(defaultTab);
@@ -286,6 +288,9 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
       }
       setModal(false);
       cargar();
+      // Invalidar caché de puestos para que Empleados y otras páginas lo reflejen de inmediato
+      queryClient.invalidateQueries({ queryKey: ["puestos"] });
+      toastExito(editando ? "Puesto actualizado" : "Puesto creado correctamente");
     } catch (err) { setError(err.message); } finally { setGuardando(false); }
   };
 
@@ -303,6 +308,8 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
       else          await crearHorario(data);
       setModal(false);
       cargar();
+      queryClient.invalidateQueries({ queryKey: ["horarios"] });
+      toastExito(editando ? "Horario actualizado" : "Horario creado correctamente");
     } catch (err) { setError(err.message); } finally { setGuardando(false); }
   };
 
@@ -310,9 +317,15 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
     const tipo = tab === "puestos" ? "puesto" : "horario";
     if (!(await confirmar(`¿Eliminar ${tipo} "${nombre}"? Esta acción no se puede deshacer.`, "Eliminar", "danger"))) return;
     try {
-      if (tab === "puestos") await eliminarPuesto(id);
-      else                   await eliminarHorario(id);
+      if (tab === "puestos") {
+        await eliminarPuesto(id);
+        queryClient.invalidateQueries({ queryKey: ["puestos"] });
+      } else {
+        await eliminarHorario(id);
+        queryClient.invalidateQueries({ queryKey: ["horarios"] });
+      }
       cargar();
+      toastExito(`${tipo.charAt(0).toUpperCase() + tipo.slice(1)} eliminado correctamente`);
     } catch (err) { toastError(err); }
   };
 
@@ -797,6 +810,8 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
                     try {
                       await eliminarArea(area.id);
                       cargar();
+                      queryClient.invalidateQueries({ queryKey: ["areas"] });
+                      toastExito("Área eliminada correctamente");
                     } catch (err) { toastError(err); }
                   }}>🗑️ Eliminar</button>
                 </div>
@@ -852,6 +867,8 @@ const Admin = ({ defaultTab = "puestos", visibleTabs = null }) => {
                         }
                         setAreaModal(false);
                         cargar();
+                        queryClient.invalidateQueries({ queryKey: ["areas"] });
+                        toastExito(areaEditando ? "Área actualizada" : "Área creada correctamente");
                       } catch (err) { setAreaError(err.message); }
                       finally { setGuardandoArea(false); }
                     }}
