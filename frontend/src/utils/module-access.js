@@ -4,11 +4,13 @@ const DEFAULT_MODULES_BY_ROLE = {
     "dashboard", "eventos", "incidencias", "reportes", "sucursales", "empleados",
     "grupos", "mapa", "administracion", "auditoria", "logs", "notificaciones",
     "vacaciones", "incapacidades", "calendario", "organigrama", "horarios", "licencias",
+    "desarrollo_organizacional",
   ],
   super_admin: [
     "dashboard", "eventos", "incidencias", "reportes", "sucursales", "empleados",
     "grupos", "mapa", "administracion", "auditoria", "logs", "notificaciones",
     "vacaciones", "incapacidades", "calendario", "organigrama", "horarios", "licencias",
+    "desarrollo_organizacional",
   ],
   agente_soporte_ti: [
     "dashboard", "eventos", "incidencias", "reportes", "sucursales", "empleados",
